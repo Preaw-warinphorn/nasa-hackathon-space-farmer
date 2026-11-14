@@ -29,7 +29,7 @@ broadacre crops by risk-adjusted net return, predicts days to harvest, and shows
    The app's **Model vs reality** chart shows this comparison live for any point and crop.
 6. **Economics per hectare.** Grain prices are ABARES weekly export prices (11 Nov 2026) less $60/t freight & handling;
    chickpeas use the ABARES Crop Report (Sept 2026, Table 17) delivered-Melbourne price for Apr–Jun 2026, less the same
-   freight allowance. The mungbean price and all growing costs are indicative and editable in the **Prices & costs** panel.
+   freight allowance. Mungbeans use the Australian Mungbean Association's 2026 farm-gate quote ($1,500–1,700/t; low end used). Growing costs are indicative; all figures are editable in the **Prices & costs** panel.
    Gross margin = yield × price − variable growing costs (so "return" is on variable costs).
 7. **Risk-adjusted ranking.** Score = expected return (saturating) minus the share of past seasons that lost money.
    Off-season crops always rank last. When no crop is expected to pay, the app says so and points to the other window.
@@ -64,7 +64,7 @@ npm run preview    # serves dist/ on 127.0.0.1:4173
 
 - Validation is against **state** averages; a single paddock swings more than its state. District-level yields would
   be a better test.
-- Growing costs and the mungbean price are indicative, not taken from a published budget. Check them against
+- Growing costs are indicative, not taken from a published budget. Check them against
   current NSW DPI / GRDC gross-margin budgets and enter your own in the app.
 - The wilting-point rescaling of `GWETROOT` uses the site's own record, not a soil test. NASA SMAP and ECOSTRESS
   are natural next data sources (add them next to `src/nasa/power.ts`).

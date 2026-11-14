@@ -321,7 +321,7 @@ export default function App() {
           </table>
           <p className="mt-4 text-xs text-gray-600">
             Based on NASA POWER daily agroclimatology (T2M_MAX, T2M_MIN, PRECTOTCORR, GWETROOT, ALLSKY_SFC_SW_DWN). Yield model calibrated against ABARES state yields 2014–2025.
-            Prices: ABARES export prices ({PRICE_DATE}) less freight; chickpeas from ABARES quarterly prices; mungbean price and growing costs are indicative. Indicative planning tool, not financial advice.
+            Prices: ABARES export prices ({PRICE_DATE}) less freight; chickpeas from ABARES quarterly prices; mungbeans from the Australian Mungbean Association (2026); growing costs are indicative. Indicative planning tool, not financial advice.
           </p>
         </div>
       )}

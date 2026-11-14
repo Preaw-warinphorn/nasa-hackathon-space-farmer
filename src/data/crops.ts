@@ -8,7 +8,7 @@
 //
 // Prices: farm-gate = ABARES weekly export price (FOB port) minus a freight & handling allowance.
 // Chickpeas: ABARES quarterly delivered price (Crop Report Sept 2026, Table 17) less freight.
-// Mungbeans have no ABARES price series, so they use an indicative figure.
+// Mungbeans have no ABARES price series: farm-gate price quoted by the Australian Mungbean Association for the 2026 crop.
 // Costs: indicative variable costs (seed, fertiliser, chemicals, operations, harvest, levies) in the
 // range of recent NSW DPI / GRDC gross-margin budgets. Edit them in the app's "Prices & costs" panel.
 
@@ -197,8 +197,8 @@ export const CROPS: Crop[] = [
     heatThresholdC: 38,
     heatLossPerDay: 0.015,
     frostLossPerDay: 0.08,
-    priceAudPerT: 900,
-    priceSource: 'Indicative farm-gate price (no public price feed)',
+    priceAudPerT: 1500,
+    priceSource: 'Australian Mungbean Association (president J. Hunt, mid-2026): $1,500–1,700/t to the farmer for the 2026 crop, “extremely high”; low end used as the market is expected to ease',
     costAudPerHa: 450,
     nitrogenKgHa: 35,
     preferredSeason: 'spring',

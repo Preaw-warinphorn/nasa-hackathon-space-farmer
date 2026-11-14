@@ -422,7 +422,7 @@ export function NasaDataPage({ series, placeName, lat, lon }: Props) {
             Niña; use the rainfall slider to test those.
           </li>
           <li>
-            <strong className="text-white">Prices and costs aren’t NASA data.</strong> Grain prices are ABARES export prices less a freight allowance; chickpeas use ABARES’s quarterly delivered price; the mungbean price and all growing costs are indicative. Edit them in the forecaster’s “Prices & costs” panel. Not financial advice.
+            <strong className="text-white">Prices and costs aren’t NASA data.</strong> Grain prices are ABARES export prices less a freight allowance; chickpeas use ABARES’s quarterly delivered price; mungbeans use the Australian Mungbean Association’s 2026 farm-gate quote; growing costs are indicative. Edit them in the forecaster’s “Prices & costs” panel. Not financial advice.
           </li>
         </ul>
         <p className="text-xs text-slate-400">

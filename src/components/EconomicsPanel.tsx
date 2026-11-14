@@ -34,7 +34,7 @@ export function EconomicsPanel({ crops, economics, unit, onChange }: { crops: Cr
           <a className="inline-flex items-center gap-0.5 text-cyan-400 hover:underline" href={ABARES_PRICES_URL} target="_blank" rel="noreferrer">
             ABARES weekly export prices <ExternalLink className="size-3" />
           </a>{' '}
-          ({PRICE_DATE}, FOB port) less ${FREIGHT_HANDLING_AUD_PER_T}/t for freight, receival and port charges. Chickpeas use ABARES’s quarterly delivered price (Crop Report, Sept 2026); mungbeans have no ABARES price series.
+          ({PRICE_DATE}, FOB port) less ${FREIGHT_HANDLING_AUD_PER_T}/t for freight, receival and port charges. Chickpeas use ABARES’s quarterly delivered price (Crop Report, Sept 2026); mungbeans use the 2026 farm-gate price quoted by the Australian Mungbean Association.
           Growing costs are indicative variable costs (seed, fertiliser, chemicals, operations, harvest, levies) and exclude land, machinery ownership and labour, so
           “ROI” is the return on variable costs. Type your own numbers to override.
         </p>
