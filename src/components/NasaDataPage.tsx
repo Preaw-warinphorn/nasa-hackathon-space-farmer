@@ -97,7 +97,7 @@ export function NasaDataPage({ series, placeName, lat, lon }: Props) {
         </div>
       </div>
 
-      <Section icon={<Database className="size-4 text-cyan-400" />} title="1. What the data contains">
+      <Section icon={<Database className="size-4 text-cyan-400" />} title="What the data contains">
         <p>
           We request five daily parameters from the POWER <em>Agroclimatology</em> community. Each one is a single value per day for the grid cell containing the paddock.
         </p>
@@ -147,7 +147,7 @@ export function NasaDataPage({ series, placeName, lat, lon }: Props) {
         </p>
       </Section>
 
-      <Section icon={<Workflow className="size-4 text-emerald-400" />} title="2. How the data is extracted">
+      <Section icon={<Workflow className="size-4 text-emerald-400" />} title="How the data is extracted">
         <Steps
           steps={[
             <>
@@ -230,7 +230,7 @@ export function NasaDataPage({ series, placeName, lat, lon }: Props) {
         )}
       </Section>
 
-      <Section icon={<FlaskConical className="size-4 text-amber-400" />} title="3. How the data drives the forecast">
+      <Section icon={<FlaskConical className="size-4 text-amber-400" />} title="How the data drives the forecast">
         <Steps
           steps={[
             <>
@@ -272,7 +272,7 @@ export function NasaDataPage({ series, placeName, lat, lon }: Props) {
         </p>
       </Section>
 
-      <Section icon={<Sprout className="size-4 text-emerald-400" />} title="4. Climate factors, crop vulnerability and soil health">
+      <Section icon={<Sprout className="size-4 text-emerald-400" />} title="Climate factors, crop vulnerability and soil health">
         <p>
           A crop is vulnerable when the weather pushes it outside its comfort zone at the wrong moment, most of all around flowering. This table shows how each factor
           does damage, and how much of it AcreCast currently captures.
@@ -309,7 +309,7 @@ export function NasaDataPage({ series, placeName, lat, lon }: Props) {
         </p>
       </Section>
 
-      <Section icon={<BookOpen className="size-4 text-cyan-400" />} title="5. Key science terms explained">
+      <Section icon={<BookOpen className="size-4 text-cyan-400" />} title="Key science terms explained">
         {anomaly && (
           <div className="rounded-xl border border-cyan-500/20 bg-space-900 p-3.5">
             <p className="text-xs font-bold text-cyan-300">Live example: soil moisture anomaly for {placeName}</p>
@@ -342,7 +342,7 @@ export function NasaDataPage({ series, placeName, lat, lon }: Props) {
         </dl>
       </Section>
 
-      <Section icon={<Satellite className="size-4 text-cyan-400" />} title="6. Satellite vs ground measurements">
+      <Section icon={<Satellite className="size-4 text-cyan-400" />} title="Satellite vs ground measurements">
         <p>
           A <strong className="text-white">ground station</strong> (a rain gauge, thermometer screen or soil-moisture probe) measures one spot very accurately. A{' '}
           <strong className="text-white">satellite</strong> sees everywhere, but it measures indirectly (reflected light, emitted microwaves) and averages over a large
@@ -390,7 +390,7 @@ export function NasaDataPage({ series, placeName, lat, lon }: Props) {
         </p>
       </Section>
 
-      <Section icon={<TriangleAlert className="size-4 text-amber-400" />} title="7. Limits worth knowing">
+      <Section icon={<TriangleAlert className="size-4 text-amber-400" />} title="Limits worth knowing">
         <ul className="list-disc space-y-1.5 pl-5">
           <li>
             <strong className="text-white">It’s a grid cell, not your paddock.</strong> NASA POWER weather is about 50 km across. Local hills, frost hollows and storms

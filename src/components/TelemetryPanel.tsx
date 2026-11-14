@@ -15,7 +15,7 @@ export function TelemetryPanel({ snap, series, scientist, season }: { snap: Site
     <section className="space-y-4 rounded-2xl border border-space-700 bg-space-800 p-5 shadow-lg">
       <div className="flex items-center justify-between">
         <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-slate-300">
-          <Satellite className="size-4 text-cyan-400" /> 2. NASA Space Telemetry
+          <Satellite className="size-4 text-cyan-400" /> NASA Space Telemetry
         </h3>
         <span className="rounded border border-cyan-800 bg-cyan-950 px-2 py-0.5 font-mono text-[11px] text-cyan-400">NASA POWER</span>
       </div>

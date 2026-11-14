@@ -53,7 +53,7 @@ export function FarmerReadinessPanel({ snap, season }: { snap: SiteSnapshot; sea
     <section className="space-y-4 rounded-2xl border border-space-700 bg-space-800 p-5 shadow-lg">
       <div className="flex items-center justify-between">
         <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-slate-300">
-          <Tractor className="size-4 text-emerald-400" /> 2. Paddock Readiness
+          <Tractor className="size-4 text-emerald-400" /> Paddock Readiness
         </h3>
         <span className="flex items-center gap-1 rounded-full border border-emerald-800 bg-emerald-950 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-400">
           <span className="size-2 animate-pulse rounded-full bg-emerald-400" /> Farmer view

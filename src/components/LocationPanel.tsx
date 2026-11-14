@@ -130,7 +130,7 @@ export function LocationPanel(p: Props) {
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
         <div>
           <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-slate-200">
-            <MapPin className="size-4 text-emerald-400" /> 1. Pick Paddock & Draw Boundary
+            <MapPin className="size-4 text-emerald-400" /> Pick Paddock & Draw Boundary
           </h2>
           <p className="mt-0.5 text-xs text-slate-400">
             Drop a pin anywhere in Australia, search for a town, or use the <strong className="text-emerald-300">pen tool</strong> to trace your fence lines.

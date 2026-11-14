@@ -80,7 +80,7 @@ export function Leaderboard({
       <div className="flex flex-col justify-between gap-2 border-b border-space-700 pb-3 sm:flex-row sm:items-center">
         <div>
           <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-slate-300">
-            <ChartLine className="size-4 text-emerald-400" /> 3. Season Investment Leaderboard
+            <ChartLine className="size-4 text-emerald-400" /> Season Investment Leaderboard
           </h2>
           <p className="mt-0.5 font-mono text-xs text-slate-400">
             📍 {placeName} · {acres.toLocaleString()} acres · temp +{tempAnomalyC.toFixed(1)}°C · rain {rainAnomalyPct > 0 ? '+' : ''}
