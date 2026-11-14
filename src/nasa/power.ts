@@ -20,6 +20,11 @@ export interface DailySeries {
   solar: number[]
   fetchedAt: number
   requestUrl: string
+  /** Upstream datasets NASA POWER reports for this response (e.g. MERRA2, SYN1DEG). */
+  sources?: string[]
+  apiVersion?: string
+  /** Official long names and units per parameter, as returned by the API. */
+  paramInfo?: Record<string, { longname: string; units: string }>
 }
 
 export type DataSource = 'live' | 'cache' | 'stale-cache'
@@ -29,8 +34,8 @@ export interface PowerResult {
   source: DataSource
 }
 
-const CACHE_PREFIX = 'acrecast:power:v1:'
-const CACHE_TTL_MS = 12 * 60 * 60 * 1000
+const CACHE_PREFIX = 'acrecast:power:v2:'
+export const CACHE_TTL_MS = 12 * 60 * 60 * 1000
 
 function ymd(d: Date): string {
   return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`
@@ -53,7 +58,8 @@ export function buildPowerUrl(lat: number, lon: number, now = new Date()): strin
 interface PowerJson {
   geometry?: { coordinates?: number[] }
   properties?: { parameter?: Record<string, Record<string, number>> }
-  header?: { fill_value?: number }
+  header?: { fill_value?: number; sources?: string[]; api?: { version?: string } }
+  parameters?: Record<string, { longname: string; units: string }>
   messages?: string[]
 }
 
@@ -85,6 +91,9 @@ export function parsePowerJson(json: PowerJson, lat: number, lon: number, reques
     solar: [],
     fetchedAt: Date.now(),
     requestUrl,
+    sources: json.header?.sources,
+    apiVersion: json.header?.api?.version,
+    paramInfo: json.parameters,
   }
   let prevMax = NaN
   let prevMin = NaN

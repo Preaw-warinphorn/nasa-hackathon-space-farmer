@@ -1,5 +1,6 @@
-import { FlaskConical, LoaderCircle, Printer, RefreshCw, SatelliteDish, Tractor, TriangleAlert } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { Database, FlaskConical, LoaderCircle, Printer, RefreshCw, SatelliteDish, Tractor, TriangleAlert } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { NasaDataPage } from './components/NasaDataPage'
 import { DeepDive, Leaderboard, WinnerBanner } from './components/Results'
 import { LocationPanel } from './components/LocationPanel'
 import { TelemetryPanel } from './components/TelemetryPanel'
@@ -12,6 +13,23 @@ import { rankCrops, siteSnapshot } from './engine/model'
 import { usePowerData } from './nasa/usePowerData'
 
 type Mode = 'farmer' | 'scientist'
+type Page = 'home' | 'nasa-data'
+
+/** Minimal hash router: #/nasa-data → explainer page, anything else → forecaster.
+ *  Hash URLs work on any static host without server rewrites. */
+function useHashPage(): Page {
+  const read = (): Page => (window.location.hash.replace(/^#\/?/, '') === 'nasa-data' ? 'nasa-data' : 'home')
+  const [page, setPage] = useState<Page>(read)
+  useEffect(() => {
+    const onChange = () => {
+      setPage(read())
+      window.scrollTo(0, 0)
+    }
+    window.addEventListener('hashchange', onChange)
+    return () => window.removeEventListener('hashchange', onChange)
+  }, [])
+  return page
+}
 
 export default function App() {
   const [hub, setHub] = useState<Hub | null>(HUBS[0])
@@ -24,6 +42,7 @@ export default function App() {
   const [pawcMm, setPawc] = useState(HUBS[0].pawcMm)
   const [activeId, setActiveId] = useState<string | null>(null)
   const [mode, setMode] = useState<Mode>('farmer')
+  const page = useHashPage()
 
   const { state, retry } = usePowerData(coords.lat, coords.lon)
   const series = state.series
@@ -58,7 +77,7 @@ export default function App() {
     <div className="min-h-screen">
       <header className="no-print sticky top-0 z-[1100] border-b border-space-700 bg-space-800/80 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-3">
+          <a href="#/" className="flex items-center gap-3">
             <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-tr from-emerald-600 to-cyan-500 shadow-lg shadow-emerald-500/20">
               <SatelliteDish className="size-5 text-white" />
             </div>
@@ -69,8 +88,18 @@ export default function App() {
               </div>
               <p className="hidden text-xs text-slate-400 sm:block">Space-Powered Crop Investment & Harvest Forecaster</p>
             </div>
-          </div>
+          </a>
           <div className="flex items-center gap-3">
+            <a
+              href={page === 'nasa-data' ? '#/' : '#/nasa-data'}
+              className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
+                page === 'nasa-data' ? 'border-cyan-500/50 bg-cyan-600 text-white' : 'border-space-600 text-cyan-300 hover:bg-space-700'
+              }`}
+            >
+              <Database className="size-3.5" /> <span className="hidden sm:inline">{page === 'nasa-data' ? 'Back to forecaster' : 'NASA Data Explained'}</span>
+            </a>
+            {page === 'home' && (
+            <>
             <div className="flex items-center rounded-lg border border-space-700 bg-space-900 p-1 text-xs">
               <button
                 onClick={() => setMode('farmer')}
@@ -92,10 +121,16 @@ export default function App() {
             >
               <Printer className="size-3.5" /> Export Prospectus
             </button>
+            </>
+            )}
           </div>
         </div>
       </header>
 
+      {page === 'nasa-data' && <NasaDataPage series={series} placeName={placeName} lat={coords.lat} lon={coords.lon} />}
+
+      {page === 'home' && (
+      <>
       <main className="no-print mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6 lg:px-8">
         <div className="flex flex-col items-start justify-between gap-4 rounded-2xl border border-emerald-500/20 bg-gradient-to-r from-emerald-950/60 via-space-800 to-cyan-950/60 p-5 shadow-xl md:flex-row md:items-center">
           <div>
@@ -210,10 +245,13 @@ export default function App() {
         </div>
       )}
 
+      </>
+      )}
+
       <footer className="no-print border-t border-space-800 py-6 text-center text-xs text-slate-400">
         <p>AcreCast AU — Built for NASA Space Apps Challenge 2026 (Field Shift: Adapting Farms with NASA Data).</p>
         <p className="mt-1">
-          Data: <a className="underline hover:text-white" href="https://power.larc.nasa.gov/" target="_blank" rel="noreferrer">NASA POWER</a> Agroclimatology API. Crop economics are indicative GRDC/ABARES-style benchmarks — not financial advice.
+          Data: <a className="underline hover:text-white" href="https://power.larc.nasa.gov/" target="_blank" rel="noreferrer">NASA POWER</a> Agroclimatology API (<a className="underline hover:text-white" href="#/nasa-data">how we use it</a>). Crop economics are indicative GRDC/ABARES-style benchmarks — not financial advice.
         </p>
       </footer>
     </div>

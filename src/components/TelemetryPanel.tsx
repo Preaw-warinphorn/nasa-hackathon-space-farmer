@@ -43,6 +43,10 @@ export function TelemetryPanel({ snap, series, scientist, season }: { snap: Site
         <Stat label="Season GDD (base 5°C)" value={`${Math.round(snap.seasonGdd).toLocaleString()}°C·d`} cls="text-cyan-400" />
       </div>
 
+      <a href="#/nasa-data" className="block text-right text-[11px] font-semibold text-cyan-400 hover:text-cyan-300">
+        What is this data and how is it used? →
+      </a>
+
       {scientist && (
         <div className="space-y-1 rounded-lg border border-space-700 bg-space-950 p-3 font-mono text-xs text-slate-300">
           <p className="font-bold text-emerald-400">// NASA POWER daily vector — {snap.latestDate}</p>
