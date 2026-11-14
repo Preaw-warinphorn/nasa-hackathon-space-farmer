@@ -96,3 +96,25 @@ export function pearson(a: number[], b: number[]): number | null {
   }
   return da && db ? n / Math.sqrt(da * db) : null
 }
+
+/** Back-test of the crop pick and profit forecast, 2014–2025, six demo hubs (72 hub-seasons, winter crops).
+ *  Each season is forecast using only the 10 seasons before it (and an ABARES correction learnt only from
+ *  earlier seasons), then scored with that season's ABARES state-average yields at today's prices.
+ *  Reproduce with the back-test script described in the NASA Data Explained page. */
+export const BACKTEST = {
+  period: '2014–2025',
+  seasons: 72,
+  /** Seasons where the app's pick was the crop that actually paid best. */
+  bestCropHits: 45,
+  bestCropHitsBefore: 14,
+  /** Simple rule "always grow canola", for comparison. */
+  alwaysCanolaHits: 41,
+  /** Average A$/ha the pick earned less than the best crop that season. */
+  missedAudHa: 59,
+  missedAudHaBefore: 215,
+  /** Typical (mean absolute) gap between forecast and actual gross margin for one crop in one season, A$/ha. */
+  forecastMaeAudHa: 295,
+  /** Forecast made on sowing day (today's soil water known): real loss seasons flagged / all real loss seasons. */
+  lossFlagged: 19,
+  lossSeasons: 38,
+} as const

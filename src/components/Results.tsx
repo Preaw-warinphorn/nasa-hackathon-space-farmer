@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { CalendarCheck, ChartLine, ChartPie, Check, Crown, Flame, Hourglass, Leaf, ShieldHalf, Snowflake, Sprout, Thermometer, TriangleAlert, Weight, Wheat } from 'lucide-react'
 import { formatNitrogen } from '../data/crops'
+import { BACKTEST } from '../data/validation'
 import type { CropResult } from '../engine/model'
 import { aud, longDate } from './format'
 import type { AreaUnit } from './units'
@@ -40,6 +41,9 @@ export function WinnerBanner({ winner, placeName, other, areaHa, unit }: { winne
           <span className={`font-mono text-2xl font-black ${winner.netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{aud(winner.netProfit, true)}</span>
           <span className="block font-mono text-xs text-slate-300">
             {winner.roiPct}% return on growing costs · score {winner.score}
+          </span>
+          <span className="block font-mono text-[10px] text-slate-400" title={`Back-test ${BACKTEST.period}: typical gap between forecast and actual margin for one crop in one season`}>
+            typical miss ±{fmtPerArea(BACKTEST.forecastMaeAudHa, unit)} in any one season
           </span>
         </div>
       </div>
@@ -141,7 +145,7 @@ export function Leaderboard({
           </h2>
           <p className="mt-0.5 font-mono text-xs text-slate-400">
             📍 {placeName} · {fmtArea(areaHa, unit)} · temp +{tempAnomalyC.toFixed(1)}°C · rain {rainAnomalyPct > 0 ? '+' : ''}
-            {rainAnomalyPct}% · ranked by risk-adjusted return
+            {rainAnomalyPct}% · ranked by expected margin per {unit}, less a loss-risk penalty
           </p>
         </div>
         <div className="self-start font-mono text-[11px] sm:self-auto">
@@ -317,7 +321,7 @@ export function DeepDive({ r, areaHa, unit, scientist, children }: { r: CropResu
         <Fin
           label="Gross margin"
           value={aud(r.netProfit, true)}
-          sub={`${fmtPerArea(r.netProfit / areaHa, unit, true)} · ${r.roiPct}% return`}
+          sub={`${fmtPerArea(r.netProfit / areaHa, unit, true)} · ${r.roiPct}% return · ±${fmtPerArea(BACKTEST.forecastMaeAudHa, unit)} typical miss`}
           cls={r.netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}
           highlight
         />
@@ -466,6 +470,9 @@ function YieldCuts({ r, unit }: { r: CropResult; unit: AreaUnit }) {
         <span>
           <span className="text-slate-500">Expected:</span> <strong className="text-white">{fmtYield(r.yieldTHa, unit)}</strong> · water-limited in{' '}
           {Math.round(r.waterLimitedShare * 100)}% of seasons · matured in {Math.round(r.matureShare * 100)}%
+          {r.abaresFactor !== 1 && (
+            <span title="Local correction towards ABARES state-average yields (square-rooted, limited to ×0.8–1.5)"> · ABARES correction ×{r.abaresFactor.toFixed(2)}</span>
+          )}
         </span>
         <span className="text-[10px] text-slate-400">
           Irrigation cost: <span className="font-bold text-cyan-300">{aud(r.irrigationCost)}</span>

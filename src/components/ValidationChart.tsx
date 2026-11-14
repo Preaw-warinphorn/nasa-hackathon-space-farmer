@@ -15,7 +15,22 @@ const H = 240
 const PAD = { l: 40, r: 74, t: 14, b: 26 }
 
 /** Year-by-year model yield (each year's own weather and soil water) against the ABARES state average. */
-export function ValidationChart({ cropName, cropId, state, years, unit }: { cropName: string; cropId: string; state: StateCode | null; years: YearRun[]; unit: AreaUnit }) {
+export function ValidationChart({
+  cropName,
+  cropId,
+  state,
+  years,
+  unit,
+  factor = 1,
+}: {
+  cropName: string
+  cropId: string
+  state: StateCode | null
+  years: YearRun[]
+  unit: AreaUnit
+  /** Local ABARES correction the ranking applies to this crop (the chart itself shows the uncorrected model). */
+  factor?: number
+}) {
   const [hover, setHover] = useState<number | null>(null)
   const table = state ? STATE_YIELDS_T_HA[state][cropId] : undefined
   const k = unit === 'ha' ? 1 : HA_PER_AC
@@ -74,6 +89,7 @@ export function ValidationChart({ cropName, cropId, state, years, unit }: { crop
         </span>
         <span className="ml-auto font-mono text-slate-400">
           r = {r?.toFixed(2) ?? '–'} · mean {meanModel.toFixed(2)} vs {meanObs.toFixed(2)} t/{unit}
+          {factor !== 1 && ` · ranking corrects ×${factor.toFixed(2)}`}
         </span>
       </div>
 
@@ -164,7 +180,8 @@ export function ValidationChart({ cropName, cropId, state, years, unit }: { crop
         </table>
         <p className="mt-2 leading-snug">
           Each modelled season uses that year’s own NASA weather and soil water, sown on the nominal date, with no what-if, irrigation or rotation settings.
-          ABARES figures are state averages (production ÷ planted area, so failed crops count), so a single paddock will swing more than the state. Source:{' '}
+          ABARES figures are state averages (production ÷ planted area, so failed crops count), so a single paddock will swing more than the state. The model line is
+          uncorrected; for the ranking and dollar figures, yields here are multiplied by ×{factor.toFixed(2)} (√ of ABARES ÷ model mean, limited to ×0.8–1.5). Source:{' '}
           <a className="inline-flex items-center gap-0.5 text-cyan-400 hover:underline" href={ABARES_URL} target="_blank" rel="noreferrer">
             {ABARES_SOURCE} <ExternalLink className="size-3" />
           </a>

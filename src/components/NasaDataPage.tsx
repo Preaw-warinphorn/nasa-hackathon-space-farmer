@@ -2,8 +2,8 @@ import { ArrowDown, ArrowLeft, BookOpen, Calculator, CloudSun, Database, Externa
 import type { ReactNode } from 'react'
 import { CROPS, FREIGHT_HANDLING_AUD_PER_T, PRICE_DATE, SUMMER_ZONE_SOUTH_LIMIT_LAT } from '../data/crops'
 import { IRRIGATION_AUD_PER_MM_HA } from '../data/rotation'
-import { ABARES_SOURCE, ABARES_URL } from '../data/validation'
-import { FLOWERING_END, FLOWERING_START, FROST_THRESHOLD_C, MAX_SEASON_DAYS, MEAN_INTERCEPTION, SOIL_DRY_PCTL, SOIL_WET_PCTL, STARTING_WATER_NOW_DAYS, soilMoistureAnomaly } from '../engine/model'
+import { ABARES_SOURCE, ABARES_URL, BACKTEST } from '../data/validation'
+import { ABARES_FACTOR_MAX, ABARES_FACTOR_MIN, FALLOW_DAYS, FALLOW_EFFICIENCY, FLOWERING_END, FLOWERING_START, FROST_THRESHOLD_C, MAX_SEASON_DAYS, MEAN_INTERCEPTION, SOIL_DRY_PCTL, SCORE_LOSS_PENALTY, SOIL_WET_PCTL, STARTING_WATER_NOW_DAYS, soilMoistureAnomaly } from '../engine/model'
 import type { DailySeries } from '../nasa/power'
 import { CACHE_TTL_MS, HISTORY_YEARS, buildPowerUrl } from '../nasa/power'
 
@@ -248,7 +248,9 @@ export function NasaDataPage({ series, placeName, lat, lon }: Props) {
               <strong className="text-white">Soil wetness → plant-available water at sowing.</strong> <code className="font-mono text-cyan-300">GWETROOT</code> is a
               saturation index, not usable water: plants can’t extract water below the wilting point. So we rescale it between this site’s own driest
               ({SOIL_DRY_PCTL * 100}th percentile, ≈ wilting point) and wettest ({SOIL_WET_PCTL * 100}th percentile, ≈ field capacity) values, then multiply by the soil’s
-              plant-available water capacity (PAWC). Example: wetness halfway between the two × 260 mm PAWC = 130 mm.
+              plant-available water capacity (PAWC). Example: wetness halfway between the two × 260 mm PAWC = 130 mm. GWETROOT models a vegetated surface that keeps
+              drinking, but growers keep a weed-free fallow before sowing, which stores part of the rain. So the starting water is the larger of the GWETROOT figure and a
+              fallow store of {FALLOW_EFFICIENCY * 100}% of the rain in the {FALLOW_DAYS} days before sowing (northern summer fallows store roughly 15–30%).
             </>,
             <>
               <strong className="text-white">Past seasons → an ensemble of possible futures.</strong> Nobody knows next season’s weather, so we replay the season against every
@@ -284,9 +286,12 @@ export function NasaDataPage({ series, placeName, lat, lon }: Props) {
               <a className="text-cyan-400 hover:underline" href={ABARES_URL} target="_blank" rel="noreferrer">
                 ABARES
               </a>{' '}
-              state-average yields for 2014–2025. Pooled across hubs, model vs ABARES means are wheat 2.24 vs 2.32 t/ha, barley 2.26 vs 2.50, canola 1.41 vs 1.56 and
-              chickpea 1.12 vs 1.28, and the model tracks the drought years (year-to-year correlation r ≈ 0.6–0.75 for cereals and canola, lower for chickpea). The
-              forecaster’s “Model vs reality” chart shows the year-by-year comparison for wherever you click.
+              state-average yields for 2014–2025. Pooled across hubs, model vs ABARES means are wheat 2.29 vs 2.32 t/ha, barley 2.30 vs 2.50, canola 1.44 vs 1.56 and
+              chickpea 1.14 vs 1.28, and the model tracks the drought years (year-to-year correlation r ≈ 0.65–0.75 for cereals and canola, lower for chickpea). Some
+              places still run high or low (Dalby comes out at about half of Queensland’s average), so before ranking, each crop’s yields get a local correction: the
+              square root of (ABARES state average ÷ model average at that point), kept between ×{ABARES_FACTOR_MIN} and ×{ABARES_FACTOR_MAX}. The square root moves the
+              model only half-way, so a paddock that is genuinely better than its state keeps most of that advantage. The forecaster’s “Model vs reality” chart shows the
+              uncorrected year-by-year comparison and the factor used.
             </>,
             <>
               <strong className="text-white">Yield → dollars.</strong> Per hectare: yield × farm-gate price − variable growing costs{' '}
@@ -294,10 +299,21 @@ export function NasaDataPage({ series, placeName, lat, lon }: Props) {
               prices ({PRICE_DATE}) less {`$${FREIGHT_HANDLING_AUD_PER_T}/t`} freight; every price and cost is shown with its source in the “Prices & costs” panel and can be changed.
             </>,
             <>
-              <strong className="text-white">Margins → ranking.</strong> The leaderboard ranks crops by average return on growing costs, minus the share of past seasons
-              that lost money. The previous crop you select adds rotation effects (for example +15% yield and less nitrogen fertiliser for a cereal after a pulse). Crops
+              <strong className="text-white">Margins → ranking.</strong> The leaderboard ranks crops by expected gross margin per hectare, with a small penalty (up to{' '}
+              {SCORE_LOSS_PENALTY} points) for the share of past seasons that lost money. Ranking by margin per hectare, not by return on costs, matters: return on costs
+              favours cheap crops even when a dearer crop leaves more money in the bank. The previous crop you select adds rotation effects (for example +15% yield and less nitrogen fertiliser for a cereal after a pulse). Crops
               that are off-season, or dryland summer crops (sorghum, mungbeans) south of {Math.abs(SUMMER_ZONE_SOUTH_LIMIT_LAT)}°S or in WA where they aren’t grown,
               always go last. If even the best crop is expected to lose money, the forecaster says so and points to the other sowing window instead.
+            </>,
+            <>
+              <strong className="text-white">Back-test: would it have worked?</strong> For every season {BACKTEST.period} at the six hubs ({BACKTEST.seasons} hub-seasons), we
+              made the winter-crop forecast using only the 10 seasons before it, then scored it with that season’s real ABARES yields at today’s prices. The pick was the
+              crop that actually paid best in <strong className="text-white">{BACKTEST.bestCropHits} of {BACKTEST.seasons}</strong> seasons (the earlier return-on-cost
+              ranking managed {BACKTEST.bestCropHitsBefore}; simply always growing canola gets {BACKTEST.alwaysCanolaHits}), and earned on average{' '}
+              <strong className="text-white">${BACKTEST.missedAudHa}/ha</strong> less than the best crop (previously ${BACKTEST.missedAudHaBefore}/ha). A single crop’s
+              margin in a single season is typically off by about <strong className="text-white">±${BACKTEST.forecastMaeAudHa}/ha</strong>, because nobody knows the coming
+              season’s rain. Forecasting on sowing day, with that day’s soil water known, flagged {BACKTEST.lossFlagged} of the {BACKTEST.lossSeasons} crop-seasons that
+              really lost money.
             </>,
             <>
               <strong className="text-white">The Climate Stress Time Machine</strong> shifts every replayed day: the rainfall slider scales <code className="font-mono">PRECTOTCORR</code>
@@ -690,16 +706,21 @@ const FLOW: { icon: ReactNode; title: string; body: ReactNode; detail: string }[
     title: 'We pick the best bet',
     body: (
       <>
-        Each crop gets a score from its <strong>average margin</strong> across all those seasons, minus a penalty for <strong>how often it lost money</strong>. A crop that
-        makes a bit less but rarely fails can beat a high-flyer that often crashes. Crops that are out of season, or not grown in your region, go to the bottom. If nothing
+        Each crop gets a score from its <strong>average margin per hectare</strong> across all those seasons, minus a small penalty for <strong>how often it lost
+        money</strong>. Checked against real ABARES yields for {BACKTEST.period}, this picked the best-paying crop in {BACKTEST.bestCropHits} of {BACKTEST.seasons}{' '}
+        seasons. Crops that are out of season, or not grown in your region, go to the bottom. If nothing
         is expected to make money, the app says so and suggests the other sowing window.
       </>
     ),
-    detail: 'Behind the scenes: risk-adjusted score = average return (capped) − loss frequency.',
+    detail: 'Behind the scenes: score = average margin per hectare (capped) − small loss-frequency penalty, after a local ABARES yield correction.',
   },
 ]
 
 const ASSUMPTIONS: ReactNode[] = [
+  <>
+    <strong className="text-white">Forecasts are ranges, not promises.</strong> In the back-test a crop’s forecast margin was typically about ±${BACKTEST.forecastMaeAudHa}/ha
+    away from what that season actually paid. Use the ranking and the loss risk, not the exact dollar figure.
+  </>,
   <>
     <strong className="text-white">Today’s price in every season.</strong> We use one current price for all the replayed years. Real prices move, and big harvests often
     push prices down, so price risk isn’t in the loss figures.

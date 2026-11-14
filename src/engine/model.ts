@@ -17,6 +17,7 @@ import type { Crop, Season } from '../data/crops'
 import { isRegionallySuited } from '../data/crops'
 import type { PreviousCrop, RotationEffect } from '../data/rotation'
 import { IRRIGATION_AUD_PER_MM_HA, rotationEffect } from '../data/rotation'
+import { grainState, STATE_YIELDS_T_HA } from '../data/validation'
 import type { DailySeries } from '../nasa/power'
 
 export const MAX_SEASON_DAYS = 240
@@ -30,6 +31,29 @@ export const STARTING_WATER_NOW_DAYS = 30
 /** Percentiles of a site's own GWETROOT record treated as "empty" (wilting point) and "full" (field capacity). */
 export const SOIL_DRY_PCTL = 0.01
 export const SOIL_WET_PCTL = 0.9
+/** Fallow storage: growers keep the paddock weed-free before sowing so part of the fallow rain is stored.
+ *  GWETROOT models a vegetated surface that keeps using water, so it misses this. Stored water is taken as
+ *  FALLOW_EFFICIENCY × rain over the FALLOW_DAYS before sowing (northern summer fallows store ~15–30 %),
+ *  and the starting water is whichever is larger: the GWETROOT reading or the fallow store. */
+export const FALLOW_DAYS = 150
+export const FALLOW_EFFICIENCY = 0.2
+/** Local correction against ABARES: yield × √(ABARES state mean ÷ model mean at this point), limited to this
+ *  range. Square-rooted (half-way) so a good paddock in an average state keeps most of its local advantage. */
+export const ABARES_FACTOR_MIN = 0.8
+export const ABARES_FACTOR_MAX = 1.5
+/** Fewest overlapping seasons needed before the ABARES correction is applied. */
+export const ABARES_FACTOR_MIN_YEARS = 5
+/** Expected profit (A$/ha) at which the score is ~3/4 of the way up its curve. */
+export const SCORE_PROFIT_SCALE_AUD_HA = 500
+/** Score points removed for a crop that lost money in every past season (scaled by loss share). */
+export const SCORE_LOSS_PENALTY = 10
+
+/** Risk-adjusted score (0–100 before off-season/region penalties): expected profit per hectare,
+ *  saturating, minus a small penalty for how often the crop lost money. Ranking by profit per hectare
+ *  (not ROI) is what held up best in the 2014–2025 back-test against ABARES yields. */
+export function riskScore(profitPerHa: number, lossProbability: number): number {
+  return 45 + 35 * Math.tanh(profitPerHa / SCORE_PROFIT_SCALE_AUD_HA) - SCORE_LOSS_PENALTY * lossProbability
+}
 
 export interface SowingWindow {
   /** First and last calendar day (month, day) of the normal sowing window. */
@@ -118,6 +142,8 @@ export interface CropResult {
   /** Off-season or not suited: listed after every recommended crop. */
   notRecommended: boolean
   score: number
+  /** Local ABARES correction applied to yields (1 = none). */
+  abaresFactor: number
 }
 
 export interface SiteSnapshot {
@@ -228,6 +254,13 @@ export function plantAvailableFraction(gwet: number, scale: SoilScale): number {
 }
 
 /** GWETROOT near index i (the record has occasional gaps). */
+/** Water stored by a weed-free fallow over the FALLOW_DAYS before day i (mm, capped at PAWC). */
+export function fallowStoredMm(series: DailySeries, i: number, pawcMm: number): number {
+  let rain = 0
+  for (let k = Math.max(0, i - FALLOW_DAYS); k < i; k++) rain += series.precip[k]
+  return Math.min(pawcMm, FALLOW_EFFICIENCY * rain)
+}
+
 function gwetNear(series: DailySeries, i: number): number {
   for (let k = 0; k < 10; k++) {
     if (!Number.isNaN(series.gwet[i - k])) return series.gwet[i - k]
@@ -303,6 +336,8 @@ export interface EvalOptions {
   today?: Date
   /** Force a starting-water mode (validation uses 'each-year'). */
   startWater?: 'today' | 'each-year'
+  /** Multiply every season's yield by this (the local ABARES correction). Default 1. */
+  yieldFactor?: number
 }
 
 export function evaluateCrop(series: DailySeries, crop: Crop, sc: Scenario, opts: EvalOptions = {}): CropResult {
@@ -314,9 +349,10 @@ export function evaluateCrop(series: DailySeries, crop: Crop, sc: Scenario, opts
   const latest = latestBucket(series)
   const daysAway = (sowDate.getTime() - today.getTime()) / 86_400_000
   const startWaterSource = opts.startWater ?? (latest && daysAway <= STARTING_WATER_NOW_DAYS ? 'today' : 'each-year')
-  const todayWater = latest ? plantAvailableFraction(latest.value, scale) * sc.pawcMm : 0
+  const todayWater = Math.max(latest ? plantAvailableFraction(latest.value, scale) * sc.pawcMm : 0, fallowStoredMm(series, series.dates.length, sc.pawcMm))
 
   const rotation = rotationEffect(sc.previousCrop ?? 'none', crop.id)
+  const factor = opts.yieldFactor ?? 1
   const ov = sc.economics?.[crop.id]
   const price = ov?.priceAudPerT ?? crop.priceAudPerT
   const costPerHa = Math.max(100, (ov?.costAudPerHa ?? crop.costAudPerHa) - rotation.costSavingAudPerHa)
@@ -324,11 +360,12 @@ export function evaluateCrop(series: DailySeries, crop: Crop, sc: Scenario, opts
   const costs = (costPerHa + irrigationPerHa) * sc.areaHa
 
   const sims = starts.map((s) => {
-    const startWater = startWaterSource === 'today' ? todayWater : plantAvailableFraction(gwetNear(series, s.idx), scale) * sc.pawcMm
+    const startWater =
+      startWaterSource === 'today' ? todayWater : Math.max(plantAvailableFraction(gwetNear(series, s.idx), scale) * sc.pawcMm, fallowStoredMm(series, s.idx, sc.pawcMm))
     return { year: s.year, startWater, r: simulateYear(series, s.idx, crop, sc, startWater) }
   })
   const years: YearRun[] = sims.map(({ year, startWater, r }) => {
-    const y = r.yieldTHa * rotation.yieldMult
+    const y = r.yieldTHa * rotation.yieldMult * factor
     const profitPerHa = y * price - costPerHa - irrigationPerHa
     return {
       sowYear: year,
@@ -371,10 +408,10 @@ export function evaluateCrop(series: DailySeries, crop: Crop, sc: Scenario, opts
   const offSeason = crop.preferredSeason !== sc.season
   const notSuited = !isRegionallySuited(crop, series.lat, series.lon)
 
-  // Risk-adjusted score (0–100): expected ROI (saturating) minus how often the crop lost money
+  // Risk-adjusted score (0–100): expected profit per hectare (saturating) minus how often the crop lost money
   // across past seasons. A legume's nitrogen benefit belongs to *next* season's crop, so it is
   // counted there (Previous crop = pulse), not here.
-  let score = 45 + 35 * Math.tanh(roiPct / 80) - 40 * lossProbability
+  let score = riskScore(netProfit / sc.areaHa, lossProbability)
   score += rotation.scoreBonus
   if (offSeason) score -= 20
   if (notSuited) score -= 20
@@ -415,12 +452,36 @@ export function evaluateCrop(series: DailySeries, crop: Crop, sc: Scenario, opts
     notSuited,
     notRecommended: offSeason || notSuited,
     score,
+    abaresFactor: factor,
   }
 }
 
-export function rankCrops(series: DailySeries, crops: Crop[], sc: Scenario, opts: EvalOptions = {}): CropResult[] {
+/** Local correction for one crop at this point: √(ABARES state-average yield ÷ this model's yield) over the
+ *  seasons both cover, each season replayed with its own weather and soil water at the nominal sowing date. */
+export function abaresFactor(series: DailySeries, crop: Crop, pawcMm: number): number {
+  const state = grainState(series.lat, series.lon)
+  const table = state ? STATE_YIELDS_T_HA[state][crop.id] : undefined
+  if (!table) return 1
+  const lastYear = Number(series.dates[series.dates.length - 1].slice(0, 4))
+  const sc: Scenario = { season: crop.preferredSeason, areaHa: 1, rainAnomalyPct: 0, tempAnomalyC: 0, pawcMm }
+  const pairs = evaluateCrop(series, crop, sc, { today: new Date(lastYear + 1, 0, 1), startWater: 'each-year' })
+    .years.filter((y) => table[y.sowYear] !== undefined)
+    .map((y) => [y.yieldTHa, table[y.sowYear]])
+  if (pairs.length < ABARES_FACTOR_MIN_YEARS) return 1
+  const model = mean(pairs.map((p) => p[0]))
+  const obs = mean(pairs.map((p) => p[1]))
+  if (model < 0.05) return 1
+  return Math.min(ABARES_FACTOR_MAX, Math.max(ABARES_FACTOR_MIN, Math.sqrt(obs / model)))
+}
+
+export interface RankOptions extends EvalOptions {
+  /** Apply the local ABARES correction (default true). */
+  calibrate?: boolean
+}
+
+export function rankCrops(series: DailySeries, crops: Crop[], sc: Scenario, opts: RankOptions = {}): CropResult[] {
   return crops
-    .map((c) => evaluateCrop(series, c, sc, opts))
+    .map((c) => evaluateCrop(series, c, sc, { ...opts, yieldFactor: opts.yieldFactor ?? (opts.calibrate === false ? 1 : abaresFactor(series, c, sc.pawcMm)) }))
     // Off-season and regionally unsuited crops always rank below every recommended crop, whatever their economics.
     .sort((a, b) => Number(a.notRecommended) - Number(b.notRecommended) || b.score - a.score || b.netProfit - a.netProfit)
 }

@@ -256,7 +256,7 @@ export default function App() {
                 <FarmerReadinessPanel snap={analysis.snap} season={season} />
               )}
               <DeepDive r={active} areaHa={areaHa} unit={unit} scientist={scientist}>
-                <ValidationChart cropName={active.crop.name} cropId={active.crop.id} state={abaresState} years={validationYears} unit={unit} />
+                <ValidationChart cropName={active.crop.name} cropId={active.crop.id} state={abaresState} years={validationYears} unit={unit} factor={active.abaresFactor} />
               </DeepDive>
             </div>
             <EconomicsPanel crops={CROPS} economics={economics} unit={unit} onChange={setEconomics} />

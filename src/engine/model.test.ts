@@ -3,7 +3,7 @@ import type { Crop } from '../data/crops'
 import { CROPS } from '../data/crops'
 import type { DailySeries } from '../nasa/power'
 import { parsePowerJson } from '../nasa/power'
-import { analogueStarts, dailyGdd, defaultSeason, evaluateCrop, latestBucket, nextSowDate, plantAvailableFraction, rankCrops, simulateYear, siteSnapshot, soilMoistureAnomaly, soilScale } from './model'
+import { abaresFactor, ABARES_FACTOR_MAX, ABARES_FACTOR_MIN, analogueStarts, dailyGdd, defaultSeason, evaluateCrop, FALLOW_EFFICIENCY, fallowStoredMm, latestBucket, nextSowDate, plantAvailableFraction, rankCrops, riskScore, simulateYear, siteSnapshot, soilMoistureAnomaly, soilScale } from './model'
 import { IRRIGATION_AUD_PER_MM_HA, rotationEffect } from '../data/rotation'
 
 /** Build a synthetic contiguous daily series with constant weather. */
@@ -122,9 +122,17 @@ describe('soil water at sowing', () => {
     const r = evaluateCrop(s, testCrop, baseScenario, { today: JAN })
     expect(r.startWaterSource).toBe('each-year')
     const y = Object.fromEntries(r.years.map((x) => [x.sowYear, x]))
-    expect(y[2016].startWaterMm).toBe(0)
+    // A bone-dry GWETROOT reading still leaves what a weed-free fallow stored (20 % of 150 days × 2 mm).
+    expect(y[2016].startWaterMm).toBeCloseTo(FALLOW_EFFICIENCY * 150 * 2, 6)
     expect(y[2017].startWaterMm).toBe(200)
     expect(y[2016].yieldTHa).toBeLessThan(y[2017].yieldTHa)
+  })
+
+  it('stores a share of fallow rain, capped at the soil’s capacity', () => {
+    const s = makeSeries({ from: '2015-01-01', days: 400, tmax: 20, tmin: 10, precip: 4 })
+    expect(fallowStoredMm(s, 300, 500)).toBeCloseTo(FALLOW_EFFICIENCY * 150 * 4, 6)
+    expect(fallowStoredMm(s, 300, 50)).toBe(50)
+    expect(fallowStoredMm(s, 10, 500)).toBeCloseTo(FALLOW_EFFICIENCY * 10 * 4, 6)
   })
 
   it('uses today’s measured soil water for every replay when sowing is imminent', () => {
@@ -283,5 +291,34 @@ describe('regional suitability', () => {
     const n = rankCrops(north, CROPS, sc, { today: JAN })
     expect(n.filter((r) => r.crop.summerRainfallZoneOnly).every((r) => !r.notSuited && !r.notRecommended)).toBe(true)
     expect(n[0].crop.summerRainfallZoneOnly).toBe(true)
+  })
+})
+
+describe('ranking rule', () => {
+  it('prefers more profit per hectare over a higher return on a cheap crop', () => {
+    // Cheap crop: $150/ha profit on $300 cost (50 % ROI). Dear crop: $300/ha on $900 (33 % ROI).
+    expect(riskScore(300, 0)).toBeGreaterThan(riskScore(150, 0))
+    // Loss risk still counts against a crop with the same expected profit.
+    expect(riskScore(300, 0.5)).toBeLessThan(riskScore(300, 0))
+  })
+})
+
+describe('local ABARES correction', () => {
+  it('is 1 outside the ABARES grain states and limited to its range inside them', () => {
+    const wheat = CROPS.find((c) => c.id === 'wheat')!
+    const nsw = makeSeries({ from: '2012-01-01', days: 365 * 15, tmax: 20, tmin: 8, precip: 1.5 })
+    const f = abaresFactor(nsw, wheat, 180)
+    expect(f).toBeGreaterThanOrEqual(ABARES_FACTOR_MIN)
+    expect(f).toBeLessThanOrEqual(ABARES_FACTOR_MAX)
+    expect(abaresFactor({ ...nsw, lat: -20, lon: 133 }, wheat, 180)).toBe(1)
+  })
+
+  it('scales yields when ranking, and can be switched off', () => {
+    const s = makeSeries({ from: '2012-01-01', days: 365 * 15, tmax: 20, tmin: 8, precip: 1.5 })
+    const wheat = CROPS.filter((c) => c.id === 'wheat')
+    const on = rankCrops(s, wheat, baseScenario, { today: JAN })[0]
+    const off = rankCrops(s, wheat, baseScenario, { today: JAN, calibrate: false })[0]
+    expect(off.abaresFactor).toBe(1)
+    expect(on.yieldTHa).toBeCloseTo(off.yieldTHa * on.abaresFactor, 6)
   })
 })
