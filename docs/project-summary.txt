@@ -1,0 +1,7 @@
+AcreCast AU - Project Summary
+
+We developed AcreCast AU, a web app that helps Australian grain farmers decide which crop to plant before they buy seed. A farmer drops a pin or traces their paddock on a map, and the app pulls live NASA POWER data for that spot: daily temperature, rainfall, sunlight and root-zone soil moisture. It replays the coming season against every past season of NASA weather, starting from today's measured soil water, to forecast each crop's yield, harvest date, gross margin per hectare and chance of losing money. It also flags frost, heat and drought risk.
+
+This addresses the challenge by turning NASA Earth observation data into a practical planting decision. Every forecast is checked against official ABARES crop yields; in a 2014-2025 back-test the app picked the best-paying crop in 45 of 72 seasons.
+
+It matters because one wrong crop choice in a dry year can cost a farm hundreds of dollars per hectare. As the climate becomes more variable, farmers need free, location-specific, data-driven advice they can trust, not guesswork.
