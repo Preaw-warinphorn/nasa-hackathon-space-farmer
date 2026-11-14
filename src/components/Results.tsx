@@ -48,9 +48,15 @@ export function Leaderboard({ results, activeId, onSelect, scientist }: { result
           const selected = r.crop.id === activeId
           const badge =
             r.score < 40 ? 'bg-rose-500/20 text-rose-300 border-rose-500/40' : r.score < 65 ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+          const firstOffSeason = r.offSeason && (idx === 0 || !results[idx - 1].offSeason)
           return (
+            <div key={r.crop.id}>
+            {firstOffSeason && (
+              <p className="mb-3 mt-1 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                <span className="h-px flex-1 bg-space-600" /> Off-season for this sowing window — not recommended <span className="h-px flex-1 bg-space-600" />
+              </p>
+            )}
             <button
-              key={r.crop.id}
               onClick={() => onSelect(r.crop.id)}
               className={`flex w-full flex-col items-start justify-between gap-3 rounded-xl border p-3.5 text-left transition-all sm:flex-row sm:items-center ${
                 selected ? 'border-emerald-400/80 bg-space-900 shadow-md ring-1 ring-emerald-400/50' : 'border-space-700 bg-space-900/60 hover:bg-space-900'
@@ -96,6 +102,7 @@ export function Leaderboard({ results, activeId, onSelect, scientist }: { result
                 <span className="block font-mono text-[10px] text-slate-400">ROI {r.roiPct}%</span>
               </div>
             </button>
+            </div>
           )
         })}
       </div>

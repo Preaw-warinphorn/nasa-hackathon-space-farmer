@@ -133,9 +133,17 @@ export function dailyGdd(tmax: number, tmin: number, tBase: number): number {
   return Math.max(0, (tmax + tmin) / 2 - tBase)
 }
 
+/** Share of crop water demand lost to soil evaporation before any grain is set
+ *  (cf. the 110 mm evaporation term in French–Schultz water-limited yield). */
+export const WATER_FAILURE_RATIO = 0.2
+
+/** Yield multiplier from water supply/demand. Falls to zero when water runs out: below
+ *  WATER_FAILURE_RATIO the crop sets no grain; above it yield rises to 1 at full demand, with a
+ *  curve that drops faster for drought-sensitive crops. Surplus water adds at most 15 %. */
 export function waterYieldFactor(waterRatio: number, droughtTolerance: number): number {
-  if (waterRatio < 1) return Math.max(0.2, 1 - (1 - waterRatio) * (1.5 - droughtTolerance))
-  return Math.min(1.15, 1 + (waterRatio - 1) * 0.2)
+  if (waterRatio >= 1) return Math.min(1.15, 1 + (waterRatio - 1) * 0.2)
+  const usable = Math.max(0, (waterRatio - WATER_FAILURE_RATIO) / (1 - WATER_FAILURE_RATIO))
+  return usable ** (0.6 + 1.6 * (1 - droughtTolerance))
 }
 
 /** Replay one season for one crop starting at series index `start`. */
@@ -252,7 +260,8 @@ export function evaluateCrop(series: DailySeries, crop: Crop, sc: Scenario, buck
 export function rankCrops(series: DailySeries, crops: Crop[], sc: Scenario, bucketFraction: number, today = new Date()): CropResult[] {
   return crops
     .map((c) => evaluateCrop(series, c, sc, bucketFraction, today))
-    .sort((a, b) => b.score - a.score || b.netProfit - a.netProfit)
+    // Off-season crops always rank below every in-season crop, whatever their economics.
+    .sort((a, b) => Number(a.offSeason) - Number(b.offSeason) || b.score - a.score || b.netProfit - a.netProfit)
 }
 
 export function siteSnapshot(series: DailySeries, sc: Pick<Scenario, 'season' | 'tempAnomalyC'>): SiteSnapshot {

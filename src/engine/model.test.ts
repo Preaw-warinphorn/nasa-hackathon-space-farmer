@@ -56,6 +56,15 @@ describe('thermal time', () => {
 })
 
 describe('stress', () => {
+  it('drives yield to zero as water runs out', () => {
+    for (const tol of [0.4, 0.65, 0.9]) {
+      expect(waterYieldFactor(0, tol)).toBe(0)
+      expect(waterYieldFactor(0.2, tol)).toBe(0)
+      expect(waterYieldFactor(0.3, tol)).toBeLessThan(0.3)
+      expect(waterYieldFactor(1, tol)).toBe(1)
+    }
+  })
+
   it('penalises water deficit more for drought-sensitive crops', () => {
     expect(waterYieldFactor(0.6, 0.85)).toBeGreaterThan(waterYieldFactor(0.6, 0.4))
     expect(waterYieldFactor(1.5, 0.5)).toBeLessThanOrEqual(1.15)
@@ -98,9 +107,16 @@ describe('analogue years & economics', () => {
     expect(r.harvestDate?.toDateString()).toBe(new Date(2026, 4, 15 + 100).toDateString())
   })
 
-  it('ranks crops by descending score', () => {
-    const ranked = rankCrops(s, CROPS, baseScenario, 0.4)
-    for (let i = 1; i < ranked.length; i++) expect(ranked[i - 1].score).toBeGreaterThanOrEqual(ranked[i].score)
+  it('ranks in-season crops first, each group by descending score', () => {
+    for (const season of ['winter', 'spring'] as const) {
+      const ranked = rankCrops(s, CROPS, { ...baseScenario, season }, 0.4)
+      const firstOff = ranked.findIndex((r) => r.offSeason)
+      expect(firstOff).toBeGreaterThan(0)
+      expect(ranked.slice(firstOff).every((r) => r.offSeason)).toBe(true)
+      for (let i = 1; i < ranked.length; i++) {
+        if (ranked[i - 1].offSeason === ranked[i].offSeason) expect(ranked[i - 1].score).toBeGreaterThanOrEqual(ranked[i].score)
+      }
+    }
   })
 
   it('picks the next upcoming sowing date', () => {

@@ -17,10 +17,11 @@ broadacre crops by risk-adjusted net return, predicts days to harvest, and shows
    location. For each year and crop the engine
    - accumulates growing degree days `GDD = max(0, (Tmax+Tmin)/2 − Tbase)` until the crop's thermal target → **days to harvest**
    - counts heat-stress (Tmax > crop threshold) and frost (Tmin < 1 °C) days during flowering/grain fill
-   - runs a water balance (stored water + 80 % of in-season rain vs crop demand)
+   - runs a water balance (stored water + 80 % of in-season rain vs crop demand); yield falls to zero as water
+     runs out — below 20 % of demand the crop sets no grain, and drought-sensitive crops drop off faster
    - converts yield to revenue, cost, profit
 4. **Risk-adjusted ranking.** Score = expected ROI (saturating), minus the share of past seasons that lost money,
-   plus a legume nitrogen credit, minus an off-season penalty.
+   plus a legume nitrogen credit. Off-season crops are always listed below every in-season crop.
 5. **Climate Stress Time Machine.** Rainfall (−50…+40 %) and heatwave (+0…+4 °C) sliders perturb every replayed year.
 
 **Farmer Mode** shows the decision; **NASA Telemetry Mode** adds the raw NASA vector, per-crop stress counts, and the
