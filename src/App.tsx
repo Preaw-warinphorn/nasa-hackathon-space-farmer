@@ -1,6 +1,7 @@
 import { Database, FlaskConical, LoaderCircle, Printer, RefreshCw, Tractor, TriangleAlert } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { NasaDataPage } from './components/NasaDataPage'
+import { FarmerReadinessPanel } from './components/FarmerReadinessPanel'
 import { DeepDive, Leaderboard, WinnerBanner } from './components/Results'
 import { LocationPanel } from './components/LocationPanel'
 import { TelemetryPanel } from './components/TelemetryPanel'
@@ -9,6 +10,8 @@ import { CROPS } from './data/crops'
 import type { Season } from './data/crops'
 import { DEFAULT_PAWC_MM, HUBS } from './data/hubs'
 import type { Hub } from './data/hubs'
+import type { PreviousCrop } from './data/rotation'
+import { PREVIOUS_CROPS } from './data/rotation'
 import { rankCrops, siteSnapshot } from './engine/model'
 import { usePowerData } from './nasa/usePowerData'
 
@@ -37,12 +40,14 @@ function useHashPage(): Page {
 export default function App() {
   const [hub, setHub] = useState<Hub | null>(HUBS[0])
   const [coords, setCoords] = useState({ lat: HUBS[0].lat, lon: HUBS[0].lon })
-  const [flyKey, setFlyKey] = useState(0)
+  const [customName, setCustomName] = useState<string | null>(null)
   const [acres, setAcres] = useState(500)
   const [season, setSeason] = useState<Season>('winter')
   const [rainAnomalyPct, setRain] = useState(0)
   const [tempAnomalyC, setTemp] = useState(0)
   const [pawcMm, setPawc] = useState(HUBS[0].pawcMm)
+  const [irrigationMm, setIrrigation] = useState(0)
+  const [previousCrop, setPreviousCrop] = useState<PreviousCrop>('none')
   const [activeId, setActiveId] = useState<string | null>(null)
   const [mode, setMode] = useState<Mode>('farmer')
   const page = useHashPage()
@@ -52,13 +57,13 @@ export default function App() {
 
   const analysis = useMemo(() => {
     if (!series) return null
-    const scenario = { season, acres, rainAnomalyPct, tempAnomalyC, pawcMm }
+    const scenario = { season, acres, rainAnomalyPct, tempAnomalyC, pawcMm, irrigationMm, previousCrop }
     const snap = siteSnapshot(series, scenario)
     const ranked = rankCrops(series, CROPS, scenario, snap.bucketFraction ?? 0.3)
     return { snap, ranked }
-  }, [series, season, acres, rainAnomalyPct, tempAnomalyC, pawcMm])
+  }, [series, season, acres, rainAnomalyPct, tempAnomalyC, pawcMm, irrigationMm, previousCrop])
 
-  const placeName = hub ? hub.name : `Paddock ${coords.lat.toFixed(2)}°, ${coords.lon.toFixed(2)}°`
+  const placeName = hub ? hub.name : (customName ?? `Paddock ${coords.lat.toFixed(2)}°, ${coords.lon.toFixed(2)}°`)
   const scientist = mode === 'scientist'
   const winner = analysis?.ranked[0]
   const active = analysis ? (analysis.ranked.find((r) => r.crop.id === activeId) ?? winner!) : null
@@ -68,12 +73,15 @@ export default function App() {
     setHub(h)
     setCoords({ lat: h.lat, lon: h.lon })
     setPawc(h.pawcMm)
-    setFlyKey((k) => k + 1)
+    setCustomName(null)
   }
-  const pickPoint = (lat: number, lon: number) => {
+  const pickPoint = (lat: number, lon: number, name?: string) => {
     setHub(null)
     setCoords({ lat, lon })
-    setPawc(DEFAULT_PAWC_MM)
+    setCustomName(name ?? null)
+    // Soils are regional: within ~1° of a calibrated hub, borrow its typical PAWC.
+    const near = HUBS.map((h) => ({ h, d: Math.hypot(h.lat - lat, h.lon - lon) })).sort((a, b) => a.d - b.d)[0]
+    setPawc(near.d < 1 ? near.h.pawcMm : DEFAULT_PAWC_MM)
   }
 
   return (
@@ -147,44 +155,57 @@ export default function App() {
           <DataBadge state={state} onRetry={retry} />
         </div>
 
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-          <div className="space-y-5 lg:col-span-5">
-            <LocationPanel
-              lat={coords.lat}
-              lon={coords.lon}
-              hubId={hub?.id ?? null}
-              flyKey={flyKey}
+        <LocationPanel
+          lat={coords.lat}
+          lon={coords.lon}
+          hubId={hub?.id ?? null}
+          acres={acres}
+          season={season}
+          rainAnomalyPct={rainAnomalyPct}
+          tempAnomalyC={tempAnomalyC}
+          pawcMm={pawcMm}
+          irrigationMm={irrigationMm}
+          previousCrop={previousCrop}
+          onHub={chooseHub}
+          onPick={pickPoint}
+          onAcres={setAcres}
+          onSeason={setSeason}
+          onRain={setRain}
+          onTemp={setTemp}
+          onPawc={setPawc}
+          onIrrigation={setIrrigation}
+          onPreviousCrop={setPreviousCrop}
+          onResetClimate={() => {
+            setRain(0)
+            setTemp(0)
+            setIrrigation(0)
+          }}
+        />
+
+        {!analysis && <LoadingCard state={state} onRetry={retry} />}
+        {analysis && series && winner && active && (
+          <div className={`space-y-6 transition-opacity ${state.status === 'loading' ? 'opacity-50' : ''}`}>
+            <WinnerBanner winner={winner} placeName={placeName} bucketPct={bucketPct} />
+            <Leaderboard
+              results={analysis.ranked}
+              activeId={active.crop.id}
+              onSelect={setActiveId}
+              scientist={scientist}
+              placeName={placeName}
               acres={acres}
-              season={season}
               rainAnomalyPct={rainAnomalyPct}
               tempAnomalyC={tempAnomalyC}
-              pawcMm={pawcMm}
-              onHub={chooseHub}
-              onPick={pickPoint}
-              onAcres={setAcres}
-              onSeason={setSeason}
-              onRain={setRain}
-              onTemp={setTemp}
-              onPawc={setPawc}
-              onResetClimate={() => {
-                setRain(0)
-                setTemp(0)
-              }}
             />
-            {analysis && series && <TelemetryPanel snap={analysis.snap} series={series} scientist={scientist} season={season} />}
+            <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
+              {scientist ? (
+                <TelemetryPanel snap={analysis.snap} series={series} scientist={scientist} season={season} />
+              ) : (
+                <FarmerReadinessPanel snap={analysis.snap} season={season} />
+              )}
+              <DeepDive r={active} acres={acres} scientist={scientist} />
+            </div>
           </div>
-
-          <div className="space-y-5 lg:col-span-7">
-            {!analysis && <LoadingCard state={state} onRetry={retry} />}
-            {analysis && winner && active && (
-              <div className={`space-y-5 transition-opacity ${state.status === 'loading' ? 'opacity-50' : ''}`}>
-                <WinnerBanner winner={winner} placeName={placeName} bucketPct={bucketPct} />
-                <Leaderboard results={analysis.ranked} activeId={active.crop.id} onSelect={setActiveId} scientist={scientist} />
-                <DeepDive r={active} acres={acres} scientist={scientist} />
-              </div>
-            )}
-          </div>
-        </div>
+        )}
       </main>
 
       {analysis && active && (
@@ -212,7 +233,8 @@ export default function App() {
               {Math.round(active.lossProbability * 100)}% of {active.years.length} past seasons · <strong>Worst season:</strong> {aud(active.worstProfit, true)}
             </p>
             <p>
-              <strong>Scenario:</strong> rainfall {rainAnomalyPct}% · temperature +{tempAnomalyC}°C · subsoil bucket {bucketPct}% of {pawcMm} mm PAWC
+              <strong>Scenario:</strong> rainfall {rainAnomalyPct}% · temperature +{tempAnomalyC}°C · subsoil bucket {bucketPct}% of {pawcMm} mm PAWC · irrigation{' '}
+              {irrigationMm} mm · previous crop: {previousCrop === 'none' ? 'none' : PREVIOUS_CROPS.find((c) => c.id === previousCrop)?.label}
             </p>
           </div>
           <table className="mt-4 w-full text-left text-sm">

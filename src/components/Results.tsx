@@ -1,4 +1,4 @@
-import { CalendarCheck, ChartLine, Crown, Hourglass, Leaf, Snowflake, Sprout, Thermometer, TriangleAlert, Weight, Wheat } from 'lucide-react'
+import { CalendarCheck, ChartLine, ChartPie, Check, Crown, Flame, Hourglass, Leaf, ShieldHalf, Snowflake, Sprout, Thermometer, TriangleAlert, Weight, Wheat } from 'lucide-react'
 import { formatNitrogen } from '../data/crops'
 import type { CropResult } from '../engine/model'
 import { aud, longDate } from './format'
@@ -34,14 +34,62 @@ export function WinnerBanner({ winner, placeName, bucketPct }: { winner: CropRes
   )
 }
 
-export function Leaderboard({ results, activeId, onSelect, scientist }: { results: CropResult[]; activeId: string; onSelect: (id: string) => void; scientist: boolean }) {
+function StressBadge({ rainAnomalyPct, tempAnomalyC }: { rainAnomalyPct: number; tempAnomalyC: number }) {
+  if (rainAnomalyPct <= -25)
+    return (
+      <span className="flex items-center gap-1 rounded-md border border-rose-700/60 bg-rose-950/60 px-2.5 py-1 font-semibold text-rose-300">
+        <TriangleAlert className="size-3 text-rose-400" /> El Niño shock ({rainAnomalyPct}%)
+      </span>
+    )
+  if (tempAnomalyC >= 2.5)
+    return (
+      <span className="flex items-center gap-1 rounded-md border border-amber-700/60 bg-amber-950/60 px-2.5 py-1 font-semibold text-amber-300">
+        <Flame className="size-3 text-amber-400" /> Extreme heatwave (+{tempAnomalyC.toFixed(1)}°C)
+      </span>
+    )
+  if (rainAnomalyPct !== 0 || tempAnomalyC !== 0)
+    return <span className="rounded-md border border-cyan-700/60 bg-space-900 px-2.5 py-1 font-semibold text-cyan-300">What-if scenario active</span>
+  return (
+    <span className="flex items-center gap-1 rounded-md border border-space-600 bg-space-900 px-2.5 py-1 font-semibold text-cyan-300">
+      <Check className="size-3 text-emerald-400" /> Baseline climate
+    </span>
+  )
+}
+
+export function Leaderboard({
+  results,
+  activeId,
+  onSelect,
+  scientist,
+  placeName,
+  acres,
+  rainAnomalyPct,
+  tempAnomalyC,
+}: {
+  results: CropResult[]
+  activeId: string
+  onSelect: (id: string) => void
+  scientist: boolean
+  placeName: string
+  acres: number
+  rainAnomalyPct: number
+  tempAnomalyC: number
+}) {
   return (
     <section className="space-y-4 rounded-2xl border border-space-700 bg-space-800 p-5 shadow-lg">
-      <div className="flex items-center justify-between">
-        <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-slate-300">
-          <ChartLine className="size-4 text-emerald-400" /> 3. Season Investment Leaderboard
-        </h2>
-        <span className="text-xs text-slate-400">Ranked by risk-adjusted return</span>
+      <div className="flex flex-col justify-between gap-2 border-b border-space-700 pb-3 sm:flex-row sm:items-center">
+        <div>
+          <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-slate-300">
+            <ChartLine className="size-4 text-emerald-400" /> 3. Season Investment Leaderboard
+          </h2>
+          <p className="mt-0.5 font-mono text-xs text-slate-400">
+            📍 {placeName} · {acres.toLocaleString()} acres · temp +{tempAnomalyC.toFixed(1)}°C · rain {rainAnomalyPct > 0 ? '+' : ''}
+            {rainAnomalyPct}% · ranked by risk-adjusted return
+          </p>
+        </div>
+        <div className="self-start font-mono text-[11px] sm:self-auto">
+          <StressBadge rainAnomalyPct={rainAnomalyPct} tempAnomalyC={tempAnomalyC} />
+        </div>
       </div>
       <div className="space-y-3">
         {results.map((r, idx) => {
@@ -81,6 +129,13 @@ export function Leaderboard({ results, activeId, onSelect, scientist }: { result
                       {r.yieldAc.toFixed(2)} t/ac
                     </span>
                     <span className={r.lossProbability > 0.3 ? 'text-rose-300' : ''}>loss risk {Math.round(r.lossProbability * 100)}%</span>
+                    <span className={r.crop.nitrogenKgHa > 0 ? 'font-semibold text-emerald-300' : ''}>{formatNitrogen(r.crop.nitrogenKgHa)}</span>
+                    {r.rotation.tone !== 'neutral' && (
+                      <span className={r.rotation.tone === 'good' ? 'text-emerald-300' : 'text-rose-300'}>
+                        rotation {r.rotation.yieldMult > 1 ? '+' : ''}
+                        {Math.round((r.rotation.yieldMult - 1) * 100)}%
+                      </span>
+                    )}
                     {scientist && (
                       <>
                         <span className="flex items-center gap-1">
@@ -170,10 +225,17 @@ export function DeepDive({ r, acres, scientist }: { r: CropResult; acres: number
         </p>
       </div>
 
+      {scientist ? <YieldCuts r={r} /> : <ResilienceCard r={r} />}
+
       <div className="grid grid-cols-2 gap-3 text-center sm:grid-cols-4">
         <Fin label="Expected yield" value={`${r.yieldAc.toFixed(2)} t/ac`} sub={`${Math.round(r.totalTonnes).toLocaleString()} t total`} cls="text-white" />
         <Fin label="Gross revenue" value={aud(r.grossRevenue)} sub={`@ $${c.priceAudPerT}/t`} cls="text-cyan-400" />
-        <Fin label="Total costs" value={aud(r.totalCosts)} sub={`$${c.costAudPerAc} / acre`} cls="text-rose-400" />
+        <Fin
+          label="Total costs"
+          value={aud(r.totalCosts)}
+          sub={`${aud(r.totalCosts / acres)} / acre${r.irrigationCost > 0 ? ` incl. ${aud(r.irrigationCost)} water` : ''}`}
+          cls="text-rose-400"
+        />
         <Fin
           label="Net profit"
           value={aud(r.netProfit, true)}
@@ -239,6 +301,96 @@ function Fin({ label, value, sub, cls, highlight }: { label: string; value: stri
       <span className="block text-[10px] font-semibold uppercase text-slate-400">{label}</span>
       <span className={`font-mono text-base font-bold ${cls}`}>{value}</span>
       <span className="block font-mono text-[10px] text-slate-400">{sub}</span>
+    </div>
+  )
+}
+
+function droughtLabel(t: number): string {
+  if (t >= 0.85) return 'Very strong'
+  if (t >= 0.75) return 'High'
+  if (t >= 0.6) return 'Moderate'
+  return 'Sensitive (needs moisture)'
+}
+
+/** Farmer Mode: qualitative strengths of the selected crop, derived from the same replay numbers. */
+function ResilienceCard({ r }: { r: CropResult }) {
+  const c = r.crop
+  const hot = r.avgHeatDays >= 2
+  const cold = r.avgFrostDays >= 1
+  const weather = hot && cold ? 'Heat & frost risk' : hot ? 'Heat-sensitive at flowering' : cold ? 'Frost-prone at flowering' : 'Safe weather window'
+  const soil = c.nitrogenKgHa > 0 ? `Fixes ~${c.nitrogenKgHa} kg/ha free N` : c.nitrogenKgHa === 0 ? 'Nitrogen neutral' : 'Uses soil nitrogen'
+  const rotCls =
+    r.rotation.tone === 'good'
+      ? 'border-emerald-500/40 bg-emerald-950/40 text-emerald-300'
+      : r.rotation.tone === 'bad'
+        ? 'border-rose-500/40 bg-rose-950/40 text-rose-300'
+        : 'border-space-700 bg-space-900/60 text-slate-300'
+  return (
+    <div className="space-y-3 rounded-xl border border-space-700 bg-space-900/80 p-4">
+      <div className="flex items-center justify-between border-b border-space-700 pb-2">
+        <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-200">
+          <ShieldHalf className="size-3.5 text-emerald-400" /> Crop Resilience & Rotation Fit
+        </span>
+        <span className="rounded border border-emerald-800 bg-emerald-950 px-2 py-0.5 text-[10px] font-semibold text-emerald-400">Farmer view</span>
+      </div>
+      <div className="grid grid-cols-3 items-stretch gap-2.5 text-center text-xs">
+        <Badge label="Drought tolerance" value={droughtLabel(c.droughtTolerance)} ok={c.droughtTolerance >= 0.6} />
+        <Badge label="Weather safety" value={weather} ok={!hot && !cold} />
+        <Badge label="Soil nutrition" value={soil} ok={c.nitrogenKgHa >= 0} />
+      </div>
+      <div className={`flex items-center gap-2 rounded-lg border p-2.5 text-xs ${rotCls}`}>
+        <Sprout className="size-4 shrink-0" />
+        <span>{r.rotation.note}</span>
+      </div>
+    </div>
+  )
+}
+
+function Badge({ label, value, ok }: { label: string; value: string; ok: boolean }) {
+  return (
+    <div className="flex h-full flex-col justify-between rounded-lg border border-space-700 bg-space-800/80 p-2.5">
+      <span className="mb-1 block text-[10px] text-slate-400">{label}</span>
+      <span className={`block text-xs font-bold ${ok ? 'text-emerald-400' : 'text-amber-300'}`}>{value}</span>
+    </div>
+  )
+}
+
+/** NASA Telemetry Mode: how potential yield is cut down to the expected yield. */
+function YieldCuts({ r }: { r: CropResult }) {
+  const c = r.crop
+  const realisation = r.yieldAc / c.baseYieldAc
+  const tile = (label: string, value: number, sub: string, title: string) => (
+    <div className="rounded-lg border border-space-700 bg-space-800/80 p-2" title={title}>
+      <span className="block truncate text-[10px] text-slate-400">{label}</span>
+      <span className={`mt-0.5 block font-mono text-xs font-bold ${value >= 0.95 ? 'text-emerald-400' : value >= 0.7 ? 'text-amber-400' : 'text-rose-400'}`}>
+        {value.toFixed(2)}
+      </span>
+      <span className="block truncate font-mono text-[9px] text-slate-500">{sub}</span>
+    </div>
+  )
+  return (
+    <div className="space-y-3 rounded-xl border border-cyan-500/30 bg-space-900/90 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-space-700 pb-2">
+        <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-200">
+          <ChartPie className="size-3.5 text-cyan-400" /> Yield Cuts (season averages)
+        </span>
+        <span className="rounded border border-space-700 bg-space-800 px-2 py-0.5 font-mono text-[10px] text-cyan-300">Yield = potential × water × stress × rotation</span>
+      </div>
+      <div className="grid grid-cols-2 gap-2 text-center text-xs sm:grid-cols-4">
+        {tile('Water supply', r.avgWaterFactor, `${Math.round(r.avgWaterRatio * 100)}% of need`, 'Stored soil water + 80% of rain + irrigation, vs crop demand')}
+        {tile('Heat & frost', r.avgStressFactor, `${r.avgHeatDays.toFixed(1)} hot · ${r.avgFrostDays.toFixed(1)} frost d`, 'Damage from hot/frosty days during flowering & grain fill')}
+        {tile('Maturity', r.matureShare, `${Math.round(r.matureShare * 100)}% of seasons`, 'Share of past seasons with enough thermal time to finish')}
+        {tile('Rotation', r.rotation.yieldMult, r.rotation.tone === 'neutral' ? 'no effect' : r.rotation.tone === 'good' ? 'boost' : 'penalty', r.rotation.note)}
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-space-800 bg-space-950 p-2.5 font-mono text-[11px] text-slate-300">
+        <span>
+          <span className="text-slate-500">Realised:</span> {c.baseYieldAc.toFixed(2)} t/ac × {realisation.toFixed(2)} = <strong className="text-white">{r.yieldAc.toFixed(2)} t/ac</strong>
+        </span>
+        <span className="text-[10px] text-slate-400">
+          Irrigation cost: <span className="font-bold text-cyan-300">{aud(r.irrigationCost)}</span>
+        </span>
+      </div>
+      <p className="text-[10px] text-slate-500">Factors are averaged across past seasons separately, so they don’t multiply exactly to the realised figure.</p>
     </div>
   )
 }

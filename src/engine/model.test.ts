@@ -3,7 +3,8 @@ import type { Crop } from '../data/crops'
 import { CROPS } from '../data/crops'
 import type { DailySeries } from '../nasa/power'
 import { parsePowerJson } from '../nasa/power'
-import { analogueStarts, dailyGdd, evaluateCrop, latestBucket, nextSowDate, rankCrops, simulateYear, soilMoistureAnomaly, waterYieldFactor } from './model'
+import { analogueStarts, dailyGdd, evaluateCrop, latestBucket, nextSowDate, rankCrops, simulateYear, siteSnapshot, soilMoistureAnomaly, waterYieldFactor } from './model'
+import { HA_PER_ACRE, IRRIGATION_AUD_PER_MM_HA, rotationEffect } from '../data/rotation'
 
 /** Build a synthetic contiguous daily series with constant weather. */
 function makeSeries(opts: { from: string; days: number; tmax: number; tmin: number; precip: number; gwet?: number }): DailySeries {
@@ -163,5 +164,42 @@ describe('soil moisture anomaly', () => {
     expect(a.normal).toBeCloseTo(0.5)
     expect(a.anomaly).toBeCloseTo(-0.2)
     expect(a.years).toBe(4)
+  })
+})
+
+describe('irrigation and rotation', () => {
+  const dry = makeSeries({ from: '2015-01-01', days: 365 * 6, tmax: 22, tmin: 10, precip: 0.2, gwet: 0.2 })
+  const today = new Date(2021, 0, 1)
+
+  it('irrigation adds water and its cost', () => {
+    const base = evaluateCrop(dry, testCrop, baseScenario, 0.2, today)
+    const irr = evaluateCrop(dry, testCrop, { ...baseScenario, irrigationMm: 100 }, 0.2, today)
+    expect(irr.avgWaterRatio - base.avgWaterRatio).toBeCloseTo(100 / testCrop.waterDemandMm, 6)
+    expect(irr.yieldAc).toBeGreaterThan(base.yieldAc)
+    expect(irr.irrigationCost).toBeCloseTo(100 * IRRIGATION_AUD_PER_MM_HA * HA_PER_ACRE * baseScenario.acres, 6)
+    expect(irr.totalCosts - base.totalCosts).toBeCloseTo(irr.irrigationCost, 6)
+  })
+
+  it('applies rotation yield multipliers, fertiliser savings and score bonuses', () => {
+    const wheat = CROPS.find((c) => c.id === 'wheat')!
+    const base = evaluateCrop(dry, wheat, baseScenario, 0.5, today)
+    const afterPulse = evaluateCrop(dry, wheat, { ...baseScenario, previousCrop: 'pulse' }, 0.5, today)
+    const afterCereal = evaluateCrop(dry, wheat, { ...baseScenario, previousCrop: 'cereal' }, 0.5, today)
+    expect(afterPulse.yieldAc).toBeCloseTo(base.yieldAc * 1.15, 6)
+    expect(afterPulse.totalCosts).toBeCloseTo(base.totalCosts - 45 * baseScenario.acres, 6)
+    expect(afterCereal.yieldAc).toBeCloseTo(base.yieldAc * 0.85, 6)
+    expect(afterCereal.rotation.tone).toBe('bad')
+    expect(rotationEffect('none', 'wheat').yieldMult).toBe(1)
+    expect(rotationEffect('canola', 'canola').yieldMult).toBe(0.8)
+  })
+})
+
+describe('site snapshot', () => {
+  it('reports a 90-day rainfall normal from earlier years', () => {
+    const s = makeSeries({ from: '2015-01-01', days: 365 * 6, tmax: 35, tmin: 10, precip: 2 })
+    const snap = siteSnapshot(s, { season: 'winter', tempAnomalyC: 0 })
+    expect(snap.rain90Mm).toBeCloseTo(180, 6)
+    expect(snap.rain90NormalMm).toBeCloseTo(180, 6)
+    expect(snap.seasonHotDays).toBe(150)
   })
 })
