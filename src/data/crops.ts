@@ -46,6 +46,11 @@ export interface Crop {
   podSetMinMeanC?: number
   /** Fractional yield loss per cool flowering day. */
   coolLossPerDay?: number
+  /** Tropical crops: minimum mean air temperature over the first week after sowing (°C, a proxy for the
+   *  "soil at 16 °C and rising" rule). Colder than this and the crop fails to establish. */
+  minSowMeanTempC?: number
+  /** Tropical crops: a killing frost (2 m minimum at or below KILLING_FROST_C) at any stage kills the crop. */
+  frostKills?: boolean
   /** Farm-gate price (A$/t). */
   priceAudPerT: number
   priceSource: string
@@ -187,6 +192,8 @@ export const CROPS: Crop[] = [
     heatThresholdC: 38,
     heatLossPerDay: 0.01,
     frostLossPerDay: 0.08,
+    minSowMeanTempC: 16,
+    frostKills: true,
     ...abares(443, 'grain sorghum (Brisbane)'),
     costAudPerHa: 650,
     nitrogenKgHa: 0,
@@ -210,6 +217,8 @@ export const CROPS: Crop[] = [
     heatThresholdC: 38,
     heatLossPerDay: 0.015,
     frostLossPerDay: 0.08,
+    minSowMeanTempC: 16,
+    frostKills: true,
     priceAudPerT: 1500,
     priceSource: 'Australian Mungbean Association (president J. Hunt, mid-2026): $1,500–1,700/t to the farmer for the 2026 crop, “extremely high”; low end used as the market is expected to ease',
     costAudPerHa: 450,

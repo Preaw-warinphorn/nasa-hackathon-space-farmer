@@ -3,7 +3,7 @@ import type { Crop } from '../data/crops'
 import { CROPS } from '../data/crops'
 import type { DailySeries } from '../nasa/power'
 import { parsePowerJson } from '../nasa/power'
-import { abaresFactor, ABARES_FACTOR_MAX, ABARES_FACTOR_MIN, analogueStarts, dailyGdd, defaultSeason, evaluateCrop, FALLOW_EFFICIENCY, fallowStoredMm, latestBucket, nextSowDate, plantAvailableFraction, rankCrops, riskScore, simulateYear, siteSnapshot, soilMoistureAnomaly, soilScale } from './model'
+import { abaresFactor, ABARES_FACTOR_MAX, KILLING_FROST_C, ABARES_FACTOR_MIN, analogueStarts, dailyGdd, defaultSeason, evaluateCrop, FALLOW_EFFICIENCY, fallowStoredMm, latestBucket, nextSowDate, plantAvailableFraction, rankCrops, riskScore, simulateYear, siteSnapshot, soilMoistureAnomaly, soilScale } from './model'
 import { IRRIGATION_AUD_PER_MM_HA, rotationEffect } from '../data/rotation'
 
 /** Build a synthetic contiguous daily series with constant weather. */
@@ -320,5 +320,29 @@ describe('local ABARES correction', () => {
     const off = rankCrops(s, wheat, baseScenario, { today: JAN, calibrate: false })[0]
     expect(off.abaresFactor).toBe(1)
     expect(on.yieldTHa).toBeCloseTo(off.yieldTHa * on.abaresFactor, 6)
+  })
+})
+
+describe('frost-tender summer crops', () => {
+  const sorghum = CROPS.find((c) => c.id === 'sorghum')!
+  it('fail to establish when sown into cold conditions', () => {
+    const cool = makeSeries({ from: '2020-01-01', days: 400, tmax: 20, tmin: 8, precip: 3 })
+    const r = simulateYear(cool, 0, sorghum, baseScenario, 150)
+    expect(r.failure).toBe('cold-sowing')
+    expect(r.yieldTHa).toBe(0)
+  })
+  it('are killed by a frost at any stage', () => {
+    const warm = makeSeries({ from: '2020-01-01', days: 400, tmax: 32, tmin: 18, precip: 4 })
+    const ok = simulateYear(warm, 0, sorghum, baseScenario, 150)
+    expect(ok.failure).toBeNull()
+    expect(ok.yieldTHa).toBeGreaterThan(0)
+    warm.tmin[30] = KILLING_FROST_C - 1
+    const frosted = simulateYear(warm, 0, sorghum, baseScenario, 150)
+    expect(frosted.failure).toBe('frost-kill')
+    expect(frosted.yieldTHa).toBe(0)
+  })
+  it('do not affect frost-hardy winter crops', () => {
+    const cool = makeSeries({ from: '2020-01-01', days: 400, tmax: 18, tmin: -2, precip: 3 })
+    expect(simulateYear(cool, 0, CROPS.find((c) => c.id === 'wheat')!, baseScenario, 150).failure).toBeNull()
   })
 })

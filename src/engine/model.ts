@@ -22,6 +22,10 @@ import type { DailySeries } from '../nasa/power'
 
 export const MAX_SEASON_DAYS = 240
 export const FROST_THRESHOLD_C = 1 // 2 m air temperature at which ground frost becomes likely
+/** 2 m minimum at or below which a frost-tender (tropical) crop is killed outright. */
+export const KILLING_FROST_C = 2
+/** Days after sowing averaged for the establishment temperature check. */
+export const ESTABLISH_DAYS = 21
 export const FLOWERING_START = 0.4
 export const FLOWERING_END = 0.85
 /** Average share of sunlight the canopy intercepts over the whole season (low early, high mid-season). */
@@ -93,6 +97,8 @@ export interface YearRun {
   startWaterMm: number
   heatDays: number
   frostDays: number
+  /** Crop failed outright: too cold to establish, or killed by frost (frost-tender crops only). */
+  failure: 'cold-sowing' | 'frost-kill' | null
   solarMj: number
   /** Water supply / (water supply needed to reach the radiation-limited yield). */
   waterRatio: number
@@ -126,6 +132,8 @@ export interface CropResult {
   worstProfit: number
   avgHeatDays: number
   avgFrostDays: number
+  /** Share of past seasons a frost-tender crop failed to establish (too cold) or was killed by frost. */
+  coldFailShare: number
   avgWaterRatio: number
   avgRainMm: number
   avgStartWaterMm: number
@@ -284,7 +292,14 @@ export function simulateYear(series: DailySeries, start: number, crop: Crop, sc:
   let days: number | null = null
   let floweringStartDay = 0
   let floweringEndDay = 0
+  let failure: 'cold-sowing' | 'frost-kill' | null = null
   const rainMult = 1 + sc.rainAnomalyPct / 100
+  if (crop.minSowMeanTempC !== undefined) {
+    let t = 0
+    let n = 0
+    for (let d = 0; d < ESTABLISH_DAYS && start + d < series.dates.length; d++, n++) t += (series.tmax[start + d] + series.tmin[start + d]) / 2 + sc.tempAnomalyC
+    if (n && t / n < crop.minSowMeanTempC) failure = 'cold-sowing'
+  }
   let lastSolar = 15
   for (let d = 0; d < MAX_SEASON_DAYS && start + d < series.dates.length; d++) {
     const i = start + d
@@ -302,6 +317,7 @@ export function simulateYear(series: DailySeries, start: number, crop: Crop, sc:
       if (crop.podSetMinMeanC !== undefined && (tx + tn) / 2 < crop.podSetMinMeanC) coolDays++
     }
     if (frac >= FLOWERING_END && !floweringEndDay) floweringEndDay = d + 1
+    if (crop.frostKills && !failure && tn <= KILLING_FROST_C) failure = 'frost-kill'
     if (gdd >= crop.targetGdd) {
       days = d + 1
       break
@@ -313,7 +329,7 @@ export function simulateYear(series: DailySeries, start: number, crop: Crop, sc:
   const radiationLimitedTHa = Math.min(crop.maxYieldTHa, solar * MEAN_INTERCEPTION * crop.rueGPerMj * crop.harvestIndex * 0.01)
   const waterNeeded = crop.evapLossMm + (radiationLimitedTHa * 1000) / crop.wueKgHaMm
   const stressFactor = Math.max(0.25, 1 - heatDays * crop.heatLossPerDay - frostDays * crop.frostLossPerDay - coolDays * (crop.coolLossPerDay ?? 0))
-  const yieldTHa = days !== null ? Math.min(waterLimitedTHa, radiationLimitedTHa) * stressFactor : 0
+  const yieldTHa = days !== null && !failure ? Math.min(waterLimitedTHa, radiationLimitedTHa) * stressFactor : 0
   return {
     days,
     gdd,
@@ -329,6 +345,8 @@ export function simulateYear(series: DailySeries, start: number, crop: Crop, sc:
     yieldTHa,
     floweringStartDay,
     floweringEndDay,
+    /** Why the crop failed outright (too cold to establish, or killed by frost), if it did. */
+    failure,
   }
 }
 
@@ -375,6 +393,7 @@ export function evaluateCrop(series: DailySeries, crop: Crop, sc: Scenario, opts
       startWaterMm: startWater,
       heatDays: r.heatDays,
       frostDays: r.frostDays,
+      failure: r.failure,
       solarMj: r.solar,
       waterRatio: r.waterRatio,
       waterLimitedTHa: r.waterLimitedTHa,
@@ -439,6 +458,7 @@ export function evaluateCrop(series: DailySeries, crop: Crop, sc: Scenario, opts
     worstProfit,
     avgHeatDays: mean(years.map((y) => y.heatDays)),
     avgFrostDays: mean(years.map((y) => y.frostDays)),
+    coldFailShare: years.length ? years.filter((y) => y.failure).length / years.length : 0,
     avgWaterRatio: mean(years.map((y) => y.waterRatio)),
     avgRainMm: mean(years.map((y) => y.rainMm)),
     avgStartWaterMm: mean(years.map((y) => y.startWaterMm)),

@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { CROPS, FREIGHT_HANDLING_AUD_PER_T, PRICE_DATE, SUMMER_ZONE_SOUTH_LIMIT_LAT } from '../data/crops'
 import { IRRIGATION_AUD_PER_MM_HA } from '../data/rotation'
 import { ABARES_SOURCE, ABARES_URL, BACKTEST } from '../data/validation'
-import { ABARES_FACTOR_MAX, ABARES_FACTOR_MIN, FALLOW_DAYS, FALLOW_EFFICIENCY, FLOWERING_END, FLOWERING_START, FROST_THRESHOLD_C, MAX_SEASON_DAYS, MEAN_INTERCEPTION, SOIL_DRY_PCTL, SCORE_LOSS_PENALTY, SOIL_WET_PCTL, STARTING_WATER_NOW_DAYS, soilMoistureAnomaly } from '../engine/model'
+import { ABARES_FACTOR_MAX, ABARES_FACTOR_MIN, ESTABLISH_DAYS, FALLOW_DAYS, FALLOW_EFFICIENCY, FLOWERING_END, FLOWERING_START, FROST_THRESHOLD_C, KILLING_FROST_C, MAX_SEASON_DAYS, MEAN_INTERCEPTION, SOIL_DRY_PCTL, SCORE_LOSS_PENALTY, SOIL_WET_PCTL, STARTING_WATER_NOW_DAYS, soilMoistureAnomaly } from '../engine/model'
 import type { DailySeries } from '../nasa/power'
 import { CACHE_TTL_MS, HISTORY_YEARS, buildPowerUrl } from '../nasa/power'
 
@@ -268,7 +268,11 @@ export function NasaDataPage({ series, placeName, lat, lon }: Props) {
               <strong className="text-white">Temperature → heat and frost damage.</strong> During flowering and grain fill (from {FLOWERING_START * 100}% to{' '}
               {FLOWERING_END * 100}% of the thermal target), each day with <code className="font-mono">T2M_MAX</code> above the crop’s heat threshold, or{' '}
               <code className="font-mono">T2M_MIN</code> below {FROST_THRESHOLD_C} °C, costs a crop-specific share of yield. Chickpeas also lose pods on flowering
-              days with a mean temperature below {CHICKPEA.podSetMinMeanC} °C, which is why they suit the warmer north better than cool southern springs.
+              days with a mean temperature below {CHICKPEA.podSetMinMeanC} °C, which is why they suit the warmer north better than cool southern springs. Sorghum and
+              mungbeans are frost-tender tropical crops: if the {ESTABLISH_DAYS} days after sowing average below 16 °C (the “soil at 16 °C and rising” rule) they fail to
+              establish, and a night with <code className="font-mono">T2M_MIN</code> at or below {KILLING_FROST_C} °C at any stage kills them. NASA’s gridded minimum
+              runs a few degrees warmer than a paddock thermometer on frosty nights, so {KILLING_FROST_C} °C stands in for a ground frost. That is why they fail if sown
+              in autumn.
             </>,
             <>
               <strong className="text-white">Rain + soil water → water-limited yield.</strong> The French–Schultz relation used across Australian dryland cropping:{' '}

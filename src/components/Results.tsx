@@ -195,6 +195,12 @@ export function Leaderboard({
                       {fmtYield(r.yieldTHa, unit)}
                     </span>
                     <span className={r.lossProbability > 0.3 ? 'text-rose-300' : ''}>loss risk {Math.round(r.lossProbability * 100)}%</span>
+                    {r.coldFailShare > 0 && (
+                      <span className="flex items-center gap-1 text-sky-300" title="Frost-tender crop: fails if sown into cold soil (needs ~16 °C and rising) or hit by frost at any stage">
+                        <Snowflake className="size-3" />
+                        {r.coldFailShare === 1 ? 'too cold: fails every season' : `cold/frost kills ${Math.round(r.coldFailShare * 100)}% of seasons`}
+                      </span>
+                    )}
                     <span className={r.crop.nitrogenKgHa > 0 ? 'font-semibold text-emerald-300' : ''}>{formatNitrogen(r.crop.nitrogenKgHa)}</span>
                     {r.rotation.tone !== 'neutral' && (
                       <span className={r.rotation.tone === 'good' ? 'text-emerald-300' : 'text-rose-300'}>
