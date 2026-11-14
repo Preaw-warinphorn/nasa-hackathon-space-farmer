@@ -1,6 +1,8 @@
-import { ArrowLeft, BookOpen, Database, ExternalLink, FlaskConical, Satellite, Sprout, TriangleAlert, Workflow } from 'lucide-react'
+import { ArrowDown, ArrowLeft, BookOpen, Calculator, CloudSun, Database, ExternalLink, FlaskConical, ListChecks, MapPin, Repeat, Route, Satellite, Sprout, TriangleAlert, Trophy, Workflow } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { CROPS } from '../data/crops'
+import { CROPS, FREIGHT_HANDLING_AUD_PER_T, PRICE_DATE, SUMMER_ZONE_SOUTH_LIMIT_LAT } from '../data/crops'
+import { IRRIGATION_AUD_PER_MM_HA } from '../data/rotation'
+import { ABARES_SOURCE, ABARES_URL } from '../data/validation'
 import { FLOWERING_END, FLOWERING_START, FROST_THRESHOLD_C, MAX_SEASON_DAYS, MEAN_INTERCEPTION, SOIL_DRY_PCTL, SOIL_WET_PCTL, STARTING_WATER_NOW_DAYS, soilMoistureAnomaly } from '../engine/model'
 import type { DailySeries } from '../nasa/power'
 import { CACHE_TTL_MS, HISTORY_YEARS, buildPowerUrl } from '../nasa/power'
@@ -57,6 +59,11 @@ const PARAMS: { id: string; longname: string; units: string; meaning: string; us
   },
 ]
 
+const WHEAT = CROPS.find((c) => c.id === 'wheat')!
+const CHICKPEA = CROPS.find((c) => c.id === 'chickpea')!
+const WINTER_EVAP = WHEAT.evapLossMm
+const SUMMER_EVAP = Math.max(...CROPS.map((c) => c.evapLossMm))
+
 const SOURCES: Record<string, string> = {
   MERRA2: 'NASA GMAO MERRA-2 reanalysis — temperature, precipitation and soil wetness (~0.5° × 0.625° grid)',
   GEOSIT: 'NASA GMAO GEOS-IT — keeps the MERRA-2-style record current for the most recent days',
@@ -87,7 +94,8 @@ export function NasaDataPage({ series, placeName, lat, lon }: Props) {
         <p className="mt-2 text-sm leading-relaxed text-slate-300">
           Every weather and soil number on the forecaster comes from one NASA source: the <strong className="text-cyan-300">NASA POWER</strong> (Prediction Of Worldwide Energy Resources)
           project run by NASA Langley Research Center. POWER turns NASA satellite observations and climate models into ready-to-use daily weather for any point on Earth.
-          This page explains what that data contains, how we download and clean it, and exactly how it drives the crop recommendations.
+          This page explains what that data contains, how we download and clean it, and exactly how it drives the crop recommendations. Two things are not NASA data:
+          grain prices, and the ABARES crop yields we use to check the model against reality. Both are explained below.
         </p>
         <div className="mt-4 grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
           <Fact label="Data source" value="NASA POWER" />
@@ -96,6 +104,8 @@ export function NasaDataPage({ series, placeName, lat, lon }: Props) {
           <Fact label="API key needed" value="None" />
         </div>
       </div>
+
+      <ProgramFlow />
 
       <Section icon={<Database className="size-4 text-cyan-400" />} title="What the data contains">
         <p>
@@ -151,7 +161,8 @@ export function NasaDataPage({ series, placeName, lat, lon }: Props) {
         <Steps
           steps={[
             <>
-              <strong className="text-white">You pick a paddock.</strong> A hub button or a map click gives us a latitude and longitude.
+              <strong className="text-white">You pick a paddock.</strong> A hub button, a map click, a town search, your phone’s GPS, or a boundary drawn with the
+              pen tool gives us a latitude and longitude (a drawn boundary also sets the paddock area, and its centre becomes the point we query).
             </>,
             <>
               <strong className="text-white">One request to NASA.</strong> Your browser calls the POWER daily point API directly (there is no AcreCast server in between) for
@@ -241,7 +252,8 @@ export function NasaDataPage({ series, placeName, lat, lon }: Props) {
             </>,
             <>
               <strong className="text-white">Past seasons → an ensemble of possible futures.</strong> Nobody knows next season’s weather, so we replay the season against every
-              past year in the record on the same sowing day, using that year’s real NASA weather. With {HISTORY_YEARS} years of data that’s about 10 “what could happen”
+              past year in the record on the same sowing day, using that year’s real NASA weather. The sowing day defaults to the next window: today if we are inside
+              the autumn (15 Apr–30 Jun) or spring (1 Oct–31 Dec) window, otherwise 15 May or 15 October. With {HISTORY_YEARS} years of data that’s about 10 “what could happen”
               seasons. Each replay starts from <em>that year’s own</em> soil water on its sowing day, so drought years start dry. Only when sowing is within{' '}
               {STARTING_WATER_NOW_DAYS} days do we start every replay from today’s measured soil water, because then we actually know it.
             </>,
@@ -254,12 +266,13 @@ export function NasaDataPage({ series, placeName, lat, lon }: Props) {
               <strong className="text-white">Temperature → heat and frost damage.</strong> During flowering and grain fill (from {FLOWERING_START * 100}% to{' '}
               {FLOWERING_END * 100}% of the thermal target), each day with <code className="font-mono">T2M_MAX</code> above the crop’s heat threshold, or{' '}
               <code className="font-mono">T2M_MIN</code> below {FROST_THRESHOLD_C} °C, costs a crop-specific share of yield. Chickpeas also lose pods on flowering
-              days with a mean temperature below 15 °C, which is why they suit the warmer north better than cool southern springs.
+              days with a mean temperature below {CHICKPEA.podSetMinMeanC} °C, which is why they suit the warmer north better than cool southern springs.
             </>,
             <>
               <strong className="text-white">Rain + soil water → water-limited yield.</strong> The French–Schultz relation used across Australian dryland cropping:{' '}
-              <code className="font-mono text-cyan-300">yield = WUE × (soil water + in-season PRECTOTCORR − E)</code>, where E (~110 mm) is lost to soil evaporation
-              and WUE is the crop’s water-use efficiency (e.g. wheat 15 kg grain per mm).
+              <code className="font-mono text-cyan-300">yield = WUE × (soil water + in-season PRECTOTCORR + irrigation − E)</code>, where E (about {WINTER_EVAP} mm for
+              winter crops, up to {SUMMER_EVAP} mm for summer crops) is lost to soil evaporation and WUE is the crop’s water-use efficiency (e.g. wheat{' '}
+              {WHEAT.wueKgHaMm} kg of grain per mm of water).
             </>,
             <>
               <strong className="text-white">Sunlight → yield ceiling.</strong> Summing <code className="font-mono">ALLSKY_SFC_SW_DWN</code> over the season, ×{' '}
@@ -267,12 +280,24 @@ export function NasaDataPage({ series, placeName, lat, lon }: Props) {
               crop gets the lower of the water- and sunlight-limited yields, minus heat and frost damage.
             </>,
             <>
-              <strong className="text-white">Model vs reality.</strong> WUE values were calibrated so the model’s yields at the demo hubs match ABARES state-average yields
-              for 2014–2025 on average; the forecaster’s “Model vs reality” chart shows the year-by-year comparison for wherever you click.
+              <strong className="text-white">Model vs reality.</strong> WUE values were calibrated so the model’s yields at the six demo hubs match{' '}
+              <a className="text-cyan-400 hover:underline" href={ABARES_URL} target="_blank" rel="noreferrer">
+                ABARES
+              </a>{' '}
+              state-average yields for 2014–2025. Pooled across hubs, model vs ABARES means are wheat 2.24 vs 2.32 t/ha, barley 2.26 vs 2.50, canola 1.41 vs 1.56 and
+              chickpea 1.12 vs 1.28, and the model tracks the drought years (year-to-year correlation r ≈ 0.6–0.75 for cereals and canola, lower for chickpea). The
+              forecaster’s “Model vs reality” chart shows the year-by-year comparison for wherever you click.
             </>,
             <>
-              <strong className="text-white">Yield → dollars → ranking.</strong> Yield × price − costs gives profit in each replayed season. The leaderboard ranks crops by
-              average return, minus the share of seasons that lost money. Off-season crops always go last.
+              <strong className="text-white">Yield → dollars.</strong> Per hectare: yield × farm-gate price − variable growing costs{' '}
+              {`(plus $${IRRIGATION_AUD_PER_MM_HA.toFixed(2)}/mm/ha for any irrigation)`} gives the gross margin in each replayed season. Grain prices are ABARES export
+              prices ({PRICE_DATE}) less {`$${FREIGHT_HANDLING_AUD_PER_T}/t`} freight; every price and cost is shown with its source in the “Prices & costs” panel and can be changed.
+            </>,
+            <>
+              <strong className="text-white">Margins → ranking.</strong> The leaderboard ranks crops by average return on growing costs, minus the share of past seasons
+              that lost money. The previous crop you select adds rotation effects (for example +15% yield and less nitrogen fertiliser for a cereal after a pulse). Crops
+              that are off-season, or dryland summer crops (sorghum, mungbeans) south of {Math.abs(SUMMER_ZONE_SOUTH_LIMIT_LAT)}°S or in WA where they aren’t grown,
+              always go last. If even the best crop is expected to lose money, the forecaster says so and points to the other sowing window instead.
             </>,
             <>
               <strong className="text-white">The Climate Stress Time Machine</strong> shifts every replayed day: the rainfall slider scales <code className="font-mono">PRECTOTCORR</code>
@@ -394,7 +419,8 @@ export function NasaDataPage({ series, placeName, lat, lon }: Props) {
           </li>
           <li>
             <strong className="text-white">Ground truthing.</strong> A farmer’s own rain gauge or soil probe can calibrate the satellite picture for one paddock. In
-            AcreCast, the soil water capacity (PAWC) slider is where local knowledge goes in today.
+            AcreCast, local knowledge goes in through the soil water capacity (PAWC) slider, the previous-crop selector, a drawn paddock boundary and your own prices
+            and costs.
           </li>
         </ul>
         <p className="text-xs text-slate-400">
@@ -413,6 +439,10 @@ export function NasaDataPage({ series, placeName, lat, lon }: Props) {
             <strong className="text-white">Soil wetness is modelled.</strong> <code className="font-mono">GWETROOT</code> comes from the MERRA-2 land model, not a direct
             measurement, and our wilting-point rescaling uses the site’s own record rather than a paddock soil test. NASA SMAP satellite soil moisture would be a natural
             next upgrade.
+          </li>
+          <li>
+            <strong className="text-white">Checked against states, not districts.</strong> ABARES publishes yields by state, so the “Model vs reality” check compares one
+            paddock with a whole state’s average ({ABARES_SOURCE}). A single paddock swings more than its state, and mungbeans have no ABARES yield series at all.
           </li>
           <li>
             <strong className="text-white">A few days behind.</strong> The newest values are usually 3–5 days old. The forecaster shows the exact “observations through” date.
@@ -498,7 +528,7 @@ const FACTORS: { name: string; data: string; why: string; how: string; status: S
     name: 'Soil health (nitrogen)',
     data: 'crop benchmarks',
     why: 'Pulses fix nitrogen from the air for the next crop, while cereals and canola draw it down. Rotations shape fertiliser bills and soil fertility.',
-    how: 'Shown as a next-season nitrogen credit, with a small ranking bonus for legumes. This comes from agronomic benchmarks, not NASA data.',
+    how: 'Shown as a next-season nitrogen credit. Choosing a pulse as the previous crop boosts the next cereal’s yield and cuts its fertiliser cost. Rotation effects come from agronomic rules of thumb, not NASA data.',
     status: 'partial',
   },
 ]
@@ -525,7 +555,7 @@ const TERMS: { term: string; what: string; here: string; status: Status }[] = [
   {
     term: 'Soil moisture anomaly',
     what: 'The difference between today’s soil moisture and the long-term average for the same time of year. A negative anomaly means drier than normal, even if the raw number looks fine. This is how drought monitors flag emerging dry spells.',
-    here: 'Calculated live on this page from the 10 years of GWETROOT already downloaded.',
+    here: `Calculated live on this page from the ${HISTORY_YEARS} years of GWETROOT already downloaded. The forecaster’s readiness panel uses the same idea for rainfall (last 90 days vs the same 90 days in past years).`,
     status: 'partial',
   },
   {
@@ -589,5 +619,202 @@ function Fact({ label, value }: { label: string; value: string }) {
       <span className="block text-[10px] uppercase text-slate-400">{label}</span>
       <span className="font-mono text-sm font-bold text-white">{value}</span>
     </div>
+  )
+}
+
+/** Worked example for the price walk-through, using the app's own wheat numbers. */
+const EXAMPLE_YIELD = 2.5
+const EXAMPLE_REVENUE = EXAMPLE_YIELD * WHEAT.priceAudPerT
+const EXAMPLE_MARGIN = EXAMPLE_REVENUE - WHEAT.costAudPerHa
+
+const FLOW: { icon: ReactNode; title: string; body: ReactNode; detail: string }[] = [
+  {
+    icon: <MapPin className="size-4 text-emerald-400" />,
+    title: 'You choose a paddock',
+    body: (
+      <>
+        Drop a pin on the map, search for a town, use your phone’s GPS, or trace your fence line with the pen tool. That tells us <strong>where</strong> the paddock is and{' '}
+        <strong>how big</strong> it is. We also guess how much water your soil can hold from the nearest farming hub (clay holds more than sand); you can change it.
+      </>
+    ),
+    detail: 'Behind the scenes: latitude, longitude, area in hectares, soil water capacity (PAWC).',
+  },
+  {
+    icon: <CloudSun className="size-4 text-cyan-400" />,
+    title: 'We download NASA’s weather diary for that spot',
+    body: (
+      <>
+        NASA POWER keeps a day-by-day record for every point on Earth. We fetch the last {HISTORY_YEARS} years for your paddock: the hottest and coldest temperature each day,
+        the rain, the sunshine, and how wet the soil was.
+      </>
+    ),
+    detail: `Behind the scenes: about ${Math.round(HISTORY_YEARS * 365.25).toLocaleString()} days × 5 measurements, straight from NASA to your browser.`,
+  },
+  {
+    icon: <Repeat className="size-4 text-amber-400" />,
+    title: 'We re-run history: “what if next season is like 2019? Like 2021?”',
+    body: (
+      <>
+        For each crop, we pretend to sow it on your sowing date in <em>every</em> past year, and grow it day by day through that year’s real weather, starting with the
+        soil moisture that year actually had (or, if you’re sowing within the next {STARTING_WATER_NOW_DAYS} days, with today’s measured soil moisture, because then we know
+        it). That gives about ten realistic “possible next seasons”: some good, some average, some droughts.
+      </>
+    ),
+    detail: 'Behind the scenes: an analogue-year ensemble, one simulation per crop per past year.',
+  },
+  {
+    icon: <Sprout className="size-4 text-emerald-400" />,
+    title: 'In each of those seasons, we grow the crop',
+    body: (
+      <>
+        <strong>Warmth</strong> sets how fast it grows, which gives the harvest date. <strong>Water</strong> (stored soil water plus rain) sets how much grain it can make.{' '}
+        <strong>Sunshine</strong> sets the most it could ever make. A <strong>heatwave or frost while it flowers</strong> knocks some off. The result is a yield in tonnes per
+        hectare for that year.
+      </>
+    ),
+    detail: 'Behind the scenes: growing degree days, French–Schultz water-limited yield, radiation-use-efficiency ceiling, heat/frost damage. Checked against ABARES yields.',
+  },
+  {
+    icon: <Calculator className="size-4 text-amber-400" />,
+    title: 'We turn tonnes into dollars',
+    body: (
+      <>
+        For every simulated season: tonnes per hectare × today’s farm-gate price − the cost of growing the crop. That’s the gross margin for that year. (Details and
+        assumptions below.)
+      </>
+    ),
+    detail: 'Behind the scenes: per-hectare gross margin for each crop in each past year.',
+  },
+  {
+    icon: <Trophy className="size-4 text-amber-300" />,
+    title: 'We pick the best bet',
+    body: (
+      <>
+        Each crop gets a score from its <strong>average margin</strong> across all those seasons, minus a penalty for <strong>how often it lost money</strong>. A crop that
+        makes a bit less but rarely fails can beat a high-flyer that often crashes. Crops that are out of season, or not grown in your region, go to the bottom. If nothing
+        is expected to make money, the app says so and suggests the other sowing window.
+      </>
+    ),
+    detail: 'Behind the scenes: risk-adjusted score = average return (capped) − loss frequency.',
+  },
+]
+
+const ASSUMPTIONS: ReactNode[] = [
+  <>
+    <strong className="text-white">Today’s price in every season.</strong> We use one current price for all the replayed years. Real prices move, and big harvests often
+    push prices down, so price risk isn’t in the loss figures.
+  </>,
+  <>
+    <strong className="text-white">Fixed growing costs.</strong> Costs per hectare are the same whatever the yield (apart from irrigation and the fertiliser saved after a
+    pulse). They are indicative figures, not your farm’s budget.
+  </>,
+  <>
+    <strong className="text-white">Gross margin, not profit.</strong> Land, machinery ownership, labour, interest and tax are not included. The “return” is the return on
+    the money spent growing the crop.
+  </>,
+  <>
+    <strong className="text-white">Flat freight.</strong> ${FREIGHT_HANDLING_AUD_PER_T}/t is taken off port prices for freight and handling, whether you’re 50 km or 500 km
+    from port.
+  </>,
+  <>
+    <strong className="text-white">A well-managed crop.</strong> It is sown on time, establishes well, and weeds, pests, disease and nutrition don’t limit it (except the
+    simple rotation rules for disease and nitrogen).
+  </>,
+  <>
+    <strong className="text-white">Grid-cell weather and soil.</strong> NASA’s weather is about 50 km across, and soil wetness comes from a model, not a probe in your
+    paddock.
+  </>,
+  <>
+    <strong className="text-white">About ten seasons is a small sample.</strong> One extreme year can move the averages, and the next season could be wetter or drier
+    than any of the last ten.
+  </>,
+  <>
+    <strong className="text-white">No crystal ball.</strong> The app doesn’t know whether El Niño or La Niña is coming, or how much warmer the climate will be. Use the
+    Climate Stress Time Machine sliders to test those.
+  </>,
+  <>
+    <strong className="text-white">Region rule is a simple line.</strong> Dryland sorghum and mungbeans are treated as “not grown here” south of{' '}
+    {Math.abs(SUMMER_ZONE_SOUTH_LIMIT_LAT)}°S and in WA.
+  </>,
+  <>
+    <strong className="text-white">A planning guide, not financial advice.</strong> Check prices, costs and local agronomy before you commit.
+  </>,
+]
+
+function ProgramFlow() {
+  return (
+    <Section icon={<Route className="size-4 text-emerald-400" />} title="Program flow: from your paddock to a crop pick">
+      <p>Here is the whole journey in plain language, from the moment you pick a paddock to the crop the app recommends and the dollars it shows.</p>
+
+      <ol className="space-y-1">
+        {FLOW.map((f, i) => (
+          <li key={f.title}>
+            <div className="flex gap-3 rounded-xl border border-space-700 bg-space-900/70 p-3.5">
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-space-600 bg-space-800">{f.icon}</span>
+              <div>
+                <p className="font-bold text-white">
+                  <span className="mr-1.5 font-mono text-xs text-emerald-400">{i + 1}.</span>
+                  {f.title}
+                </p>
+                <p className="mt-1 text-sm text-slate-300">{f.body}</p>
+                <p className="mt-1 text-[11px] text-slate-500">{f.detail}</p>
+              </div>
+            </div>
+            {i < FLOW.length - 1 && <ArrowDown className="mx-auto my-1 size-4 text-slate-600" aria-hidden />}
+          </li>
+        ))}
+      </ol>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="rounded-xl border border-amber-500/30 bg-amber-950/20 p-3.5">
+          <p className="font-bold text-amber-200">Do we average the past weather?</p>
+          <p className="mt-1 text-xs leading-relaxed text-slate-300">
+            <strong>No, and on purpose.</strong> Averaging a drought year with a flood year gives an “average” year that never actually happens. It looks fine on paper
+            and hides the crop failure. So we grow the crop through <em>each real year separately</em>, and only then average the <em>results</em> (yield, dollars) and
+            count how many years lost money. That way bad years still show up as risk.
+          </p>
+        </div>
+        <div className="rounded-xl border border-cyan-500/30 bg-cyan-950/20 p-3.5">
+          <p className="font-bold text-cyan-200">Why does the past help predict next season?</p>
+          <p className="mt-1 text-xs leading-relaxed text-slate-300">
+            A paddock’s climate (how much rain usually falls, how hot spring gets, how often it frosts) changes slowly. The last {HISTORY_YEARS} seasons show the realistic
+            range of what next season could bring, good and bad. History can’t tell us <em>which</em> kind of year is coming; that needs a seasonal outlook such as the
+            Bureau of Meteorology’s. So treat the result as the odds, not a forecast, and test a dry or hot year with the sliders.
+          </p>
+        </div>
+      </div>
+
+      <h3 className="flex items-center gap-2 pt-2 font-bold text-white">
+        <Calculator className="size-4 text-amber-400" /> How the price and dollars are worked out
+      </h3>
+      <ul className="list-disc space-y-1.5 pl-5">
+        <li>
+          <strong className="text-white">Farm-gate price</strong>: what you’d be paid for a tonne of grain at your local silo. For wheat, barley, canola and sorghum we start
+          from the ABARES weekly export (port) price on {PRICE_DATE} and take off ${FREIGHT_HANDLING_AUD_PER_T}/t for trucking, receival and port charges. Chickpeas use
+          ABARES’s quarterly delivered price; mungbeans use the price the Australian Mungbean Association quoted for the 2026 crop.
+        </li>
+        <li>
+          <strong className="text-white">Growing cost</strong>: an indicative per-hectare cost for seed, fertiliser, sprays, fuel and machinery operations, harvest and
+          levies.
+        </li>
+        <li>
+          <strong className="text-white">Gross margin</strong> = tonnes per hectare × farm-gate price − growing cost, then × your paddock’s hectares. Example for wheat:{' '}
+          {EXAMPLE_YIELD} t/ha × ${WHEAT.priceAudPerT}/t = ${Math.round(EXAMPLE_REVENUE)}, minus ${WHEAT.costAudPerHa} growing cost ={' '}
+          <strong className="text-white">${Math.round(EXAMPLE_MARGIN)}/ha</strong>.
+        </li>
+        <li>
+          Every price and cost, with where it came from, is in the forecaster’s <strong className="text-white">Prices & costs</strong> panel, and you can type in your own.
+        </li>
+      </ul>
+
+      <h3 className="flex items-center gap-2 pt-2 font-bold text-white">
+        <ListChecks className="size-4 text-cyan-400" /> Assumptions to keep in mind
+      </h3>
+      <ul className="list-disc space-y-1.5 pl-5 text-xs">
+        {ASSUMPTIONS.map((a, i) => (
+          <li key={i}>{a}</li>
+        ))}
+      </ul>
+    </Section>
   )
 }
