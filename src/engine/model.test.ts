@@ -3,7 +3,7 @@ import type { Crop } from '../data/crops'
 import { CROPS } from '../data/crops'
 import type { DailySeries } from '../nasa/power'
 import { parsePowerJson } from '../nasa/power'
-import { analogueStarts, dailyGdd, evaluateCrop, latestBucket, nextSowDate, rankCrops, simulateYear, waterYieldFactor } from './model'
+import { analogueStarts, dailyGdd, evaluateCrop, latestBucket, nextSowDate, rankCrops, simulateYear, soilMoistureAnomaly, waterYieldFactor } from './model'
 
 /** Build a synthetic contiguous daily series with constant weather. */
 function makeSeries(opts: { from: string; days: number; tmax: number; tmin: number; precip: number; gwet?: number }): DailySeries {
@@ -151,5 +151,17 @@ describe('NASA POWER parsing', () => {
 
   it('throws a readable error on API error payloads', () => {
     expect(() => parsePowerJson({ messages: ['Invalid latitude'] }, 0, 0, 'x')).toThrow('Invalid latitude')
+  })
+})
+
+describe('soil moisture anomaly', () => {
+  it('compares the latest wetness with the same time of year in earlier years', () => {
+    const s = makeSeries({ from: '2020-01-01', days: 365 * 4 + 100, tmax: 20, tmin: 10, precip: 1, gwet: 0.5 })
+    s.gwet[s.gwet.length - 1] = 0.3
+    const a = soilMoistureAnomaly(s)!
+    expect(a.current).toBe(0.3)
+    expect(a.normal).toBeCloseTo(0.5)
+    expect(a.anomaly).toBeCloseTo(-0.2)
+    expect(a.years).toBe(4)
   })
 })

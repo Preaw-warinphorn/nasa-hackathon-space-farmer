@@ -1,4 +1,4 @@
-import { Database, FlaskConical, LoaderCircle, Printer, RefreshCw, SatelliteDish, Tractor, TriangleAlert } from 'lucide-react'
+import { Database, FlaskConical, LoaderCircle, Printer, RefreshCw, Tractor, TriangleAlert } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { NasaDataPage } from './components/NasaDataPage'
 import { DeepDive, Leaderboard, WinnerBanner } from './components/Results'
@@ -11,6 +11,9 @@ import { DEFAULT_PAWC_MM, HUBS } from './data/hubs'
 import type { Hub } from './data/hubs'
 import { rankCrops, siteSnapshot } from './engine/model'
 import { usePowerData } from './nasa/usePowerData'
+
+const LOGO_MARK = `${import.meta.env.BASE_URL}logo-mark.png`
+const LOGO_FULL = `${import.meta.env.BASE_URL}logo-full.png`
 
 type Mode = 'farmer' | 'scientist'
 type Page = 'home' | 'nasa-data'
@@ -78,9 +81,7 @@ export default function App() {
       <header className="no-print sticky top-0 z-[1100] border-b border-space-700 bg-space-800/80 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
           <a href="#/" className="flex items-center gap-3">
-            <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-tr from-emerald-600 to-cyan-500 shadow-lg shadow-emerald-500/20">
-              <SatelliteDish className="size-5 text-white" />
-            </div>
+            <img src={LOGO_MARK} alt="AcreCast AU logo" width={44} height={44} className="size-11 drop-shadow-[0_0_8px_rgba(16,185,129,0.35)]" />
             <div>
               <div className="flex items-center gap-2">
                 <span className="bg-gradient-to-r from-emerald-400 via-teal-200 to-cyan-400 bg-clip-text text-xl font-extrabold tracking-tight text-transparent">AcreCast AU</span>
@@ -188,8 +189,9 @@ export default function App() {
 
       {analysis && active && (
         <div className="print-only hidden bg-white p-8 text-black">
-          <div className="mb-4 flex items-center justify-between border-b-2 border-black pb-4">
-            <div>
+          <div className="mb-4 flex items-center justify-between gap-4 border-b-2 border-black pb-4">
+            <img src={LOGO_FULL} alt="AcreCast AU" className="h-20 w-auto" />
+            <div className="flex-1">
               <h1 className="text-2xl font-bold">AcreCast AU — Farm Climate Investment Prospectus</h1>
               <p className="text-sm text-gray-600">NASA Space Apps Challenge 2026 | Adapting Farms with NASA Data</p>
             </div>
@@ -301,7 +303,7 @@ function LoadingCard({ state, onRetry }: { state: ReturnType<typeof usePowerData
         </>
       ) : (
         <>
-          <LoaderCircle className="size-8 animate-spin text-cyan-400" />
+          <img src={LOGO_MARK} alt="" className="size-16 animate-pulse" />
           <p className="text-sm text-slate-300">Downloading 10 years of NASA POWER daily data for this paddock…</p>
         </>
       )}

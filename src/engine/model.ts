@@ -307,3 +307,38 @@ export function siteSnapshot(series: DailySeries, sc: Pick<Scenario, 'season' | 
     analogueYears: starts.length,
   }
 }
+
+export interface MoistureAnomaly {
+  date: string
+  current: number
+  /** Mean GWETROOT for the same ±15-day window of the year across earlier years. */
+  normal: number
+  anomaly: number
+  years: number
+}
+
+/** Soil moisture anomaly: latest root-zone wetness minus its average for this time of year. */
+export function soilMoistureAnomaly(series: DailySeries, windowDays = 15): MoistureAnomaly | null {
+  const latest = latestBucket(series)
+  if (!latest) return null
+  const ref = new Date(`${latest.date}T00:00:00Z`)
+  const refYear = ref.getUTCFullYear()
+  const vals: number[] = []
+  const years = new Set<number>()
+  series.dates.forEach((d, i) => {
+    const v = series.gwet[i]
+    if (Number.isNaN(v)) return
+    const t = new Date(`${d}T00:00:00Z`)
+    const y = t.getUTCFullYear()
+    if (y >= refYear) return
+    // Same calendar date in year y, compared within ±windowDays.
+    const anchor = Date.UTC(y, ref.getUTCMonth(), ref.getUTCDate())
+    if (Math.abs(t.getTime() - anchor) <= windowDays * 86_400_000) {
+      vals.push(v)
+      years.add(y)
+    }
+  })
+  if (!vals.length) return null
+  const normal = mean(vals)
+  return { date: latest.date, current: latest.value, normal, anomaly: latest.value - normal, years: years.size }
+}

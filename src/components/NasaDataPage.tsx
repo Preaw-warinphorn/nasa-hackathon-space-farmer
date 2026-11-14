@@ -1,7 +1,7 @@
-import { ArrowLeft, Database, ExternalLink, FlaskConical, Satellite, TriangleAlert, Workflow } from 'lucide-react'
+import { ArrowLeft, BookOpen, Database, ExternalLink, FlaskConical, Satellite, Sprout, TriangleAlert, Workflow } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { CROPS } from '../data/crops'
-import { FLOWERING_END, FLOWERING_START, FROST_THRESHOLD_C, MAX_SEASON_DAYS, RAIN_EFFICIENCY, WATER_FAILURE_RATIO } from '../engine/model'
+import { FLOWERING_END, FLOWERING_START, FROST_THRESHOLD_C, MAX_SEASON_DAYS, RAIN_EFFICIENCY, WATER_FAILURE_RATIO, soilMoistureAnomaly } from '../engine/model'
 import type { DailySeries } from '../nasa/power'
 import { CACHE_TTL_MS, HISTORY_YEARS, buildPowerUrl } from '../nasa/power'
 
@@ -68,6 +68,7 @@ const SOURCES: Record<string, string> = {
 export function NasaDataPage({ series, placeName, lat, lon }: Props) {
   const url = series?.requestUrl ?? buildPowerUrl(lat, lon)
   const last7 = series ? Array.from({ length: Math.min(7, series.dates.length) }, (_, k) => series.dates.length - Math.min(7, series.dates.length) + k) : []
+  const anomaly = series ? soilMoistureAnomaly(series) : null
   const gwetMissing = series ? series.gwet.filter((v) => Number.isNaN(v)).length : 0
   const sampleKey = series ? series.dates.at(-1)!.replace(/-/g, '') : '20261110'
   const sampleIdx = series ? series.dates.length - 1 : -1
@@ -84,7 +85,7 @@ export function NasaDataPage({ series, placeName, lat, lon }: Props) {
           <Satellite className="size-6 text-cyan-400" /> How AcreCast uses NASA data
         </h1>
         <p className="mt-2 text-sm leading-relaxed text-slate-300">
-          Every number on the forecaster comes from one NASA source: the <strong className="text-cyan-300">NASA POWER</strong> (Prediction Of Worldwide Energy Resources)
+          Every weather and soil number on the forecaster comes from one NASA source: the <strong className="text-cyan-300">NASA POWER</strong> (Prediction Of Worldwide Energy Resources)
           project run by NASA Langley Research Center. POWER turns NASA satellite observations and climate models into ready-to-use daily weather for any point on Earth.
           This page explains what that data contains, how we download and clean it, and exactly how it drives the crop recommendations.
         </p>
@@ -271,7 +272,125 @@ export function NasaDataPage({ series, placeName, lat, lon }: Props) {
         </p>
       </Section>
 
-      <Section icon={<TriangleAlert className="size-4 text-amber-400" />} title="4. Limits worth knowing">
+      <Section icon={<Sprout className="size-4 text-emerald-400" />} title="4. Climate factors, crop vulnerability and soil health">
+        <p>
+          A crop is vulnerable when the weather pushes it outside its comfort zone at the wrong moment, most of all around flowering. This table shows how each factor
+          does damage, and how much of it AcreCast currently captures.
+        </p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="text-slate-400">
+              <tr className="border-b border-space-600">
+                <th className="py-2 pr-3">Factor</th>
+                <th className="py-2 pr-3">Why it matters for crops & soil</th>
+                <th className="py-2 pr-3">In AcreCast</th>
+              </tr>
+            </thead>
+            <tbody>
+              {FACTORS.map((f) => (
+                <tr key={f.name} className="border-b border-space-700 align-top">
+                  <td className="py-2.5 pr-3 font-semibold text-white">
+                    {f.name}
+                    <span className="block font-mono text-[10px] font-normal text-cyan-300">{f.data}</span>
+                  </td>
+                  <td className="py-2.5 pr-3 text-slate-300">{f.why}</td>
+                  <td className="py-2.5 text-slate-300">
+                    <StatusBadge status={f.status} />
+                    <span className="mt-1 block">{f.how}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-xs text-slate-400">
+          <strong className="text-slate-300">These factors stack.</strong> A hot, dry spring raises evaporation just as rain stops, so the soil bucket empties faster at
+          the moment the crop needs it most. That is why AcreCast replays whole seasons day by day instead of averaging each factor separately.
+        </p>
+      </Section>
+
+      <Section icon={<BookOpen className="size-4 text-cyan-400" />} title="5. Key science terms explained">
+        {anomaly && (
+          <div className="rounded-xl border border-cyan-500/20 bg-space-900 p-3.5">
+            <p className="text-xs font-bold text-cyan-300">Live example: soil moisture anomaly for {placeName}</p>
+            <p className="mt-1 text-xs">
+              Root-zone wetness on {anomaly.date} is <strong className="font-mono text-white">{anomaly.current.toFixed(2)}</strong>. The average for this time of year
+              across the previous {anomaly.years} years is <strong className="font-mono text-white">{anomaly.normal.toFixed(2)}</strong>. That makes the anomaly{' '}
+              <strong className={`font-mono ${anomaly.anomaly < 0 ? 'text-amber-300' : 'text-emerald-300'}`}>
+                {anomaly.anomaly >= 0 ? '+' : ''}
+                {anomaly.anomaly.toFixed(2)}
+              </strong>{' '}
+              ({anomaly.anomaly < -0.03 ? 'drier than usual' : anomaly.anomaly > 0.03 ? 'wetter than usual' : 'close to normal'} for the season).
+            </p>
+          </div>
+        )}
+        <dl className="space-y-3">
+          {TERMS.map((t) => (
+            <div key={t.term} className="rounded-xl border border-space-700 bg-space-900/60 p-3.5">
+              <dt className="flex flex-wrap items-center gap-2">
+                <span className="font-bold text-white">{t.term}</span>
+                <StatusBadge status={t.status} />
+              </dt>
+              <dd className="mt-1 space-y-1 text-xs">
+                <p>{t.what}</p>
+                <p className="text-slate-400">
+                  <strong className="text-slate-300">In AcreCast:</strong> {t.here}
+                </p>
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </Section>
+
+      <Section icon={<Satellite className="size-4 text-cyan-400" />} title="6. Satellite vs ground measurements">
+        <p>
+          A <strong className="text-white">ground station</strong> (a rain gauge, thermometer screen or soil-moisture probe) measures one spot very accurately. A{' '}
+          <strong className="text-white">satellite</strong> sees everywhere, but it measures indirectly (reflected light, emitted microwaves) and averages over a large
+          footprint. Each covers the other’s weak spots.
+        </p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="text-slate-400">
+              <tr className="border-b border-space-600">
+                <th className="py-2 pr-3"></th>
+                <th className="py-2 pr-3">Ground-based</th>
+                <th className="py-2">Satellite / model-based</th>
+              </tr>
+            </thead>
+            <tbody>
+              {COMPARE.map(([k, g, s]) => (
+                <tr key={k} className="border-b border-space-700 align-top">
+                  <td className="py-2 pr-3 font-semibold text-white">{k}</td>
+                  <td className="py-2 pr-3 text-slate-300">{g}</td>
+                  <td className="py-2 text-slate-300">{s}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <h3 className="pt-1 font-bold text-white">Why combining both is more accurate</h3>
+        <ul className="list-disc space-y-1.5 pl-5">
+          <li>
+            <strong className="text-white">Bias correction.</strong> Satellites and models drift. Comparing them with gauges and thermometers lets scientists correct
+            the bias everywhere, including places with no station. NASA POWER’s <code className="font-mono">PRECTOTCORR</code> is exactly this: model rainfall corrected
+            with gauge-based observations.
+          </li>
+          <li>
+            <strong className="text-white">Data assimilation.</strong> MERRA-2, the reanalysis behind most of our data, blends millions of satellite and ground
+            observations into a physics model, so each fills the other’s gaps.
+          </li>
+          <li>
+            <strong className="text-white">Ground truthing.</strong> A farmer’s own rain gauge or soil probe can calibrate the satellite picture for one paddock. In
+            AcreCast, the soil water capacity (PAWC) slider is where local knowledge goes in today.
+          </li>
+        </ul>
+        <p className="text-xs text-slate-400">
+          <strong className="text-slate-300">Where AcreCast sits:</strong> all our weather and soil inputs come from NASA POWER, which already combines satellite, model and ground data.
+          Next steps would be blending in local station records (such as the Bureau of Meteorology network) and on-farm probes to sharpen paddock-level accuracy.
+        </p>
+      </Section>
+
+      <Section icon={<TriangleAlert className="size-4 text-amber-400" />} title="7. Limits worth knowing">
         <ul className="list-disc space-y-1.5 pl-5">
           <li>
             <strong className="text-white">It’s a grid cell, not your paddock.</strong> NASA POWER weather is about 50 km across. Local hills, frost hollows and storms
@@ -306,6 +425,123 @@ export function NasaDataPage({ series, placeName, lat, lon }: Props) {
     </main>
   )
 }
+
+type Status = 'used' | 'partial' | 'planned'
+
+function StatusBadge({ status }: { status: Status }) {
+  const m = {
+    used: ['Used in AcreCast', 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'],
+    partial: ['Partly used / approximated', 'border-amber-500/40 bg-amber-500/10 text-amber-300'],
+    planned: ['Not used yet: future upgrade', 'border-slate-500/40 bg-slate-500/10 text-slate-300'],
+  }[status]
+  return <span className={`inline-block rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase ${m[1]}`}>{m[0]}</span>
+}
+
+const FACTORS: { name: string; data: string; why: string; how: string; status: Status }[] = [
+  {
+    name: 'Temperature',
+    data: 'T2M_MAX · T2M_MIN',
+    why: 'Sets how fast a crop develops. Heatwaves at flowering abort flowers and shrivel grain, and warmer seasons also shorten the time a crop has to fill grain.',
+    how: 'Drives growing degree days, days to harvest and heat-stress days. The heatwave slider tests warmer futures.',
+    status: 'used',
+  },
+  {
+    name: 'Frost',
+    data: `T2M_MIN < ${FROST_THRESHOLD_C} °C`,
+    why: 'A frost during flowering or early grain fill can kill the developing grain overnight, even in an otherwise good season.',
+    how: 'Frost days inside each crop’s flowering window cut yield by a crop-specific amount.',
+    status: 'used',
+  },
+  {
+    name: 'Rainfall',
+    data: 'PRECTOTCORR',
+    why: 'Refills the soil water bucket. In-season rain decides whether the crop can finish, and heavy falls on bare soil cause erosion.',
+    how: `In-season rain (${RAIN_EFFICIENCY * 100}% counted as useful) feeds the water balance. The rainfall slider tests drought or wet years.`,
+    status: 'used',
+  },
+  {
+    name: 'Soil moisture',
+    data: 'GWETROOT',
+    why: 'Stored subsoil water carries crops through dry spells. Moist soil also keeps soil biology and nutrient cycling active, a core part of soil health.',
+    how: 'Today’s value sets the starting bucket for every replayed season. The anomaly (below) shows whether it is unusually wet or dry.',
+    status: 'used',
+  },
+  {
+    name: 'Evaporation & evapotranspiration',
+    data: 'not fetched',
+    why: 'Water leaves the paddock by evaporating from soil and transpiring through leaves. High demand on hot, windy days drains the bucket fast.',
+    how: `Approximated: each crop has a fixed seasonal water demand, ${WATER_FAILURE_RATIO * 100}% of it is treated as lost to soil evaporation, and only ${RAIN_EFFICIENCY * 100}% of rain counts. Not yet measured from NASA data.`,
+    status: 'partial',
+  },
+  {
+    name: 'Vegetation stress',
+    data: 'not fetched',
+    why: 'Stressed crops reflect light differently, so satellites can spot drought or disease before a farmer sees it. Groundcover also protects soil from erosion.',
+    how: 'Not used yet. Vegetation indices such as NDVI would let AcreCast check actual crop condition during the season.',
+    status: 'planned',
+  },
+  {
+    name: 'Soil health (nitrogen)',
+    data: 'crop benchmarks',
+    why: 'Pulses fix nitrogen from the air for the next crop, while cereals and canola draw it down. Rotations shape fertiliser bills and soil fertility.',
+    how: 'Shown as a next-season nitrogen credit, with a small ranking bonus for legumes. This comes from agronomic benchmarks, not NASA data.',
+    status: 'partial',
+  },
+]
+
+const TERMS: { term: string; what: string; here: string; status: Status }[] = [
+  {
+    term: 'Growing degree days (GDD)',
+    what: 'A “heat bank” for crops. Each day deposits the amount by which the average temperature beats the crop’s base temperature. A crop flowers and matures after a set total, so warm seasons are shorter.',
+    here: 'Calculated daily from T2M_MAX and T2M_MIN to predict days to harvest and when flowering happens.',
+    status: 'used',
+  },
+  {
+    term: 'Frost risk',
+    what: 'The chance of air temperature falling low enough for ice to form on plants. Air at screen height (2 m) is usually a couple of degrees warmer than at the crop canopy, so a 2 m minimum near 0–2 °C already signals ground frost.',
+    here: `Counted as days with T2M_MIN below ${FROST_THRESHOLD_C} °C. These hurt yield only during flowering and grain fill, when crops are most sensitive.`,
+    status: 'used',
+  },
+  {
+    term: 'Soil moisture & root-zone wetness',
+    what: 'How much water the soil holds. NASA POWER’s GWETROOT reports it for the root zone as a fraction of saturation, from 0 (dry) to 1 (waterlogged).',
+    here: 'The latest value fills the Subsoil Water Bucket on the forecaster.',
+    status: 'used',
+  },
+  {
+    term: 'Soil moisture anomaly',
+    what: 'The difference between today’s soil moisture and the long-term average for the same time of year. A negative anomaly means drier than normal, even if the raw number looks fine. This is how drought monitors flag emerging dry spells.',
+    here: 'Calculated live on this page from the 10 years of GWETROOT already downloaded. The forecast itself uses the raw value.',
+    status: 'partial',
+  },
+  {
+    term: 'Water-balance indicators',
+    what: 'Bookkeeping for paddock water: what goes in (stored soil water and rain) against what goes out (crop use and evaporation). Plant-available water capacity (PAWC) is the size of the soil’s “bucket”.',
+    here: 'The water ratio (supply ÷ crop demand) decides water stress. Below 20% of demand the crop fails. PAWC is set per hub or with the slider.',
+    status: 'used',
+  },
+  {
+    term: 'Evapotranspiration (ET)',
+    what: 'Evaporation from the soil plus transpiration through leaves: the total water a crop paddock uses. It rises with heat, sunlight, wind and dry air. NASA’s ECOSTRESS instrument maps actual ET from space using land-surface temperature.',
+    here: 'Approximated with fixed crop water demands and fixed loss factors. Using ECOSTRESS or NASA POWER evaporation data is a natural upgrade.',
+    status: 'partial',
+  },
+  {
+    term: 'Vegetation indices (NDVI)',
+    what: 'The Normalised Difference Vegetation Index compares red light (absorbed by healthy leaves) with near-infrared (reflected by them): NDVI = (NIR − Red) ÷ (NIR + Red). Values near 0.8 mean dense healthy crop; near 0.1 means bare soil. Falling NDVI can reveal water or heat stress early. NASA satellites such as MODIS, VIIRS and Landsat measure it.',
+    here: 'Not used yet. It would let AcreCast check the crop actually in the ground mid-season, not just the weather.',
+    status: 'planned',
+  },
+]
+
+const COMPARE: [string, string, string][] = [
+  ['Coverage', 'Single points; stations can be 50–100+ km apart in the grain belt', 'Every location on Earth, including paddocks with no nearby station'],
+  ['Resolution', 'Exact for that spot', 'Averaged over a grid cell (about 50 km for NASA POWER weather)'],
+  ['What is measured', 'The quantity itself (mm of rain, °C)', 'Usually inferred from radiation, then processed with models'],
+  ['History', 'Long records where stations exist, with gaps when they close', 'Consistent global records (NASA POWER from 1981 for daily weather)'],
+  ['Freshness', 'Often near-real-time', 'A few days’ delay for processed products'],
+  ['Typical error', 'Low at the site; unrepresentative away from it', 'Can miss local storms, frost hollows and soil differences'],
+]
 
 function Section({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
   return (

@@ -1,3 +1,5 @@
+<p align="center"><img src="public/logo-full.png" alt="AcreCast AU" width="320" /></p>
+
 # AcreCast AU 🛰️🌾
 
 **NASA Space Apps Challenge 2026 — Field Shift: Adapting Farms with NASA Data**
@@ -44,7 +46,8 @@ npm run preview    # serves dist/ on 127.0.0.1:4173
 | `src/nasa/power.ts` | NASA POWER client, parser, cache — the only code that talks to NASA |
 | `src/engine/model.ts` | Pure agronomic & economic engine (tested in `model.test.ts`) |
 | `src/data/crops.ts`, `src/data/hubs.ts` | Crop parameters / economics and preset farming hubs |
-| `src/components/` | UI panels (map, telemetry, leaderboard, deep-dive) |
+| `src/components/` | UI panels (map, telemetry, leaderboard, deep-dive, NASA data page) |
+| `public/logo-*.png`, `favicon.png` | Web-sized logo assets; the original artwork is `brand/AcreCast_logo.png` |
 
 ## Caveats
 
