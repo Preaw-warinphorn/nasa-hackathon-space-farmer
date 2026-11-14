@@ -4,6 +4,7 @@ export type LatLon = [number, number]
 
 const EARTH_RADIUS_M = 6378137
 const ACRES_PER_M2 = 0.000247105
+const HA_PER_M2 = 0.0001
 
 /** Area of a lat/lon polygon on the sphere, in acres (spherical-excess approximation,
  *  same method as Leaflet.draw's geodesicArea). Accurate to well under 1 % at paddock scale. */
@@ -17,6 +18,11 @@ export function polygonAreaAcres(points: LatLon[]): number {
     area += (lon2 - lon1) * rad * (2 + Math.sin(lat1 * rad) + Math.sin(lat2 * rad))
   }
   return Math.abs((area * EARTH_RADIUS_M * EARTH_RADIUS_M) / 2) * ACRES_PER_M2
+}
+
+/** Area of a lat/lon polygon in hectares. */
+export function polygonAreaHa(points: LatLon[]): number {
+  return (polygonAreaAcres(points) / ACRES_PER_M2) * HA_PER_M2
 }
 
 /** Vertex average — good enough as a pin location for a convex-ish paddock. */

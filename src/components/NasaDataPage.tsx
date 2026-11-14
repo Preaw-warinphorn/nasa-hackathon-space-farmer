@@ -1,7 +1,7 @@
 import { ArrowLeft, BookOpen, Database, ExternalLink, FlaskConical, Satellite, Sprout, TriangleAlert, Workflow } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { CROPS } from '../data/crops'
-import { FLOWERING_END, FLOWERING_START, FROST_THRESHOLD_C, MAX_SEASON_DAYS, RAIN_EFFICIENCY, WATER_FAILURE_RATIO, soilMoistureAnomaly } from '../engine/model'
+import { FLOWERING_END, FLOWERING_START, FROST_THRESHOLD_C, MAX_SEASON_DAYS, MEAN_INTERCEPTION, SOIL_DRY_PCTL, SOIL_WET_PCTL, STARTING_WATER_NOW_DAYS, soilMoistureAnomaly } from '../engine/model'
 import type { DailySeries } from '../nasa/power'
 import { CACHE_TTL_MS, HISTORY_YEARS, buildPowerUrl } from '../nasa/power'
 
@@ -44,7 +44,7 @@ const PARAMS: { id: string; longname: string; units: string; meaning: string; us
     longname: 'Root Zone Soil Wetness',
     units: '0–1',
     meaning: 'How wet the soil is in the root zone (top ~1 m), as a fraction of saturation. 0 = bone dry, 1 = saturated.',
-    use: 'The latest value fills the “Subsoil Water Bucket”: the water the next crop starts with.',
+    use: 'Rescaled to plant-available water and multiplied by the soil’s PAWC: the water each replayed season starts with.',
     usedInModel: true,
   },
   {
@@ -52,8 +52,8 @@ const PARAMS: { id: string; longname: string; units: string; meaning: string; us
     longname: 'All Sky Surface Shortwave Downward Irradiance',
     units: 'MJ/m²/day',
     meaning: 'Sunlight energy reaching the ground each day, including the effect of cloud.',
-    use: 'Shown in NASA Telemetry Mode. Not yet used in the yield model (a candidate for radiation-use-efficiency yield).',
-    usedInModel: false,
+    use: 'Sets the sunlight-limited yield ceiling: intercepted sunlight × radiation-use efficiency × harvest index.',
+    usedInModel: true,
   },
 ]
 
@@ -234,28 +234,41 @@ export function NasaDataPage({ series, placeName, lat, lon }: Props) {
         <Steps
           steps={[
             <>
-              <strong className="text-white">Today’s soil water → the starting bucket.</strong> The most recent <code className="font-mono text-cyan-300">GWETROOT</code> value
-              times the soil’s plant-available water capacity (PAWC, set per hub or with the slider) gives the stored water in mm. Example: 0.48 × 260 mm = 125 mm.
+              <strong className="text-white">Soil wetness → plant-available water at sowing.</strong> <code className="font-mono text-cyan-300">GWETROOT</code> is a
+              saturation index, not usable water: plants can’t extract water below the wilting point. So we rescale it between this site’s own driest
+              ({SOIL_DRY_PCTL * 100}th percentile, ≈ wilting point) and wettest ({SOIL_WET_PCTL * 100}th percentile, ≈ field capacity) values, then multiply by the soil’s
+              plant-available water capacity (PAWC). Example: wetness halfway between the two × 260 mm PAWC = 130 mm.
             </>,
             <>
               <strong className="text-white">Past seasons → an ensemble of possible futures.</strong> Nobody knows next season’s weather, so we replay the season against every
-              past year in the record: sowing on 15 May (winter) or 15 October (spring), using that year’s real NASA weather. With {HISTORY_YEARS} years of data that’s about 10
-              “what could happen” seasons, each starting from today’s soil water.
+              past year in the record on the same sowing day, using that year’s real NASA weather. With {HISTORY_YEARS} years of data that’s about 10 “what could happen”
+              seasons. Each replay starts from <em>that year’s own</em> soil water on its sowing day, so drought years start dry. Only when sowing is within{' '}
+              {STARTING_WATER_NOW_DAYS} days do we start every replay from today’s measured soil water, because then we actually know it.
             </>,
             <>
               <strong className="text-white">Temperature → days to harvest.</strong> Each day adds growing degree days:{' '}
               <code className="font-mono text-cyan-300">GDD = max(0, (T2M_MAX + T2M_MIN)/2 − Tbase)</code>. A crop is ready when its total reaches the crop’s thermal target
-              (e.g. chickpea: {CROPS[0].targetGdd.toLocaleString()} °C·d above {CROPS[0].tBase} °C). If it hasn’t matured within {MAX_SEASON_DAYS} days, it fails that season.
+              (e.g. {CROPS[0].name.toLowerCase()}: {CROPS[0].targetGdd.toLocaleString()} °C·d above {CROPS[0].tBase} °C). If it hasn’t matured within {MAX_SEASON_DAYS} days, it fails that season.
             </>,
             <>
               <strong className="text-white">Temperature → heat and frost damage.</strong> During flowering and grain fill (from {FLOWERING_START * 100}% to{' '}
               {FLOWERING_END * 100}% of the thermal target), each day with <code className="font-mono">T2M_MAX</code> above the crop’s heat threshold, or{' '}
-              <code className="font-mono">T2M_MIN</code> below {FROST_THRESHOLD_C} °C, costs a crop-specific share of yield.
+              <code className="font-mono">T2M_MIN</code> below {FROST_THRESHOLD_C} °C, costs a crop-specific share of yield. Chickpeas also lose pods on flowering
+              days with a mean temperature below 15 °C, which is why they suit the warmer north better than cool southern springs.
             </>,
             <>
-              <strong className="text-white">Rain + soil water → water stress.</strong> Water supply = stored bucket + {RAIN_EFFICIENCY * 100}% of in-season{' '}
-              <code className="font-mono">PRECTOTCORR</code> (the rest runs off or evaporates). Comparing that to the crop’s seasonal demand gives a water ratio. Below{' '}
-              {WATER_FAILURE_RATIO * 100}% of demand the crop sets no grain; yield then rises to full at 100%, falling off faster for drought-sensitive crops like canola.
+              <strong className="text-white">Rain + soil water → water-limited yield.</strong> The French–Schultz relation used across Australian dryland cropping:{' '}
+              <code className="font-mono text-cyan-300">yield = WUE × (soil water + in-season PRECTOTCORR − E)</code>, where E (~110 mm) is lost to soil evaporation
+              and WUE is the crop’s water-use efficiency (e.g. wheat 15 kg grain per mm).
+            </>,
+            <>
+              <strong className="text-white">Sunlight → yield ceiling.</strong> Summing <code className="font-mono">ALLSKY_SFC_SW_DWN</code> over the season, ×{' '}
+              {MEAN_INTERCEPTION * 100}% intercepted by the canopy, × radiation-use efficiency × harvest index, gives the most grain the sunlight could support. The
+              crop gets the lower of the water- and sunlight-limited yields, minus heat and frost damage.
+            </>,
+            <>
+              <strong className="text-white">Model vs reality.</strong> WUE values were calibrated so the model’s yields at the demo hubs match ABARES state-average yields
+              for 2014–2025 on average; the forecaster’s “Model vs reality” chart shows the year-by-year comparison for wherever you click.
             </>,
             <>
               <strong className="text-white">Yield → dollars → ranking.</strong> Yield × price − costs gives profit in each replayed season. The leaderboard ranks crops by
@@ -398,7 +411,8 @@ export function NasaDataPage({ series, placeName, lat, lon }: Props) {
           </li>
           <li>
             <strong className="text-white">Soil wetness is modelled.</strong> <code className="font-mono">GWETROOT</code> comes from the MERRA-2 land model, not a direct
-            measurement, and we treat it as the bucket fill fraction without paddock calibration. NASA SMAP satellite soil moisture would be a natural next upgrade.
+            measurement, and our wilting-point rescaling uses the site’s own record rather than a paddock soil test. NASA SMAP satellite soil moisture would be a natural
+            next upgrade.
           </li>
           <li>
             <strong className="text-white">A few days behind.</strong> The newest values are usually 3–5 days old. The forecaster shows the exact “observations through” date.
@@ -408,7 +422,7 @@ export function NasaDataPage({ series, placeName, lat, lon }: Props) {
             Niña; use the rainfall slider to test those.
           </li>
           <li>
-            <strong className="text-white">Prices and costs aren’t NASA data.</strong> They are indicative benchmarks, not financial advice.
+            <strong className="text-white">Prices and costs aren’t NASA data.</strong> Grain prices are ABARES export prices less a freight allowance; chickpeas use ABARES’s quarterly delivered price; the mungbean price and all growing costs are indicative. Edit them in the forecaster’s “Prices & costs” panel. Not financial advice.
           </li>
         </ul>
         <p className="text-xs text-slate-400">
@@ -456,21 +470,21 @@ const FACTORS: { name: string; data: string; why: string; how: string; status: S
     name: 'Rainfall',
     data: 'PRECTOTCORR',
     why: 'Refills the soil water bucket. In-season rain decides whether the crop can finish, and heavy falls on bare soil cause erosion.',
-    how: `In-season rain (${RAIN_EFFICIENCY * 100}% counted as useful) feeds the water balance. The rainfall slider tests drought or wet years.`,
+    how: 'In-season rain feeds the French–Schultz water-limited yield. The rainfall slider tests drought or wet years.',
     status: 'used',
   },
   {
     name: 'Soil moisture',
     data: 'GWETROOT',
     why: 'Stored subsoil water carries crops through dry spells. Moist soil also keeps soil biology and nutrient cycling active, a core part of soil health.',
-    how: 'Today’s value sets the starting bucket for every replayed season. The anomaly (below) shows whether it is unusually wet or dry.',
+    how: 'Each replayed season starts from that year’s own soil wetness on sowing day, rescaled to plant-available water. The anomaly (below) shows whether today is unusually wet or dry.',
     status: 'used',
   },
   {
     name: 'Evaporation & evapotranspiration',
     data: 'not fetched',
     why: 'Water leaves the paddock by evaporating from soil and transpiring through leaves. High demand on hot, windy days drains the bucket fast.',
-    how: `Approximated: each crop has a fixed seasonal water demand, ${WATER_FAILURE_RATIO * 100}% of it is treated as lost to soil evaporation, and only ${RAIN_EFFICIENCY * 100}% of rain counts. Not yet measured from NASA data.`,
+    how: 'Approximated with the French–Schultz evaporation term (E ≈ 110–150 mm per season, by crop) and crop water-use efficiency. Not yet measured from NASA data.',
     status: 'partial',
   },
   {
@@ -505,25 +519,25 @@ const TERMS: { term: string; what: string; here: string; status: Status }[] = [
   {
     term: 'Soil moisture & root-zone wetness',
     what: 'How much water the soil holds. NASA POWER’s GWETROOT reports it for the root zone as a fraction of saturation, from 0 (dry) to 1 (waterlogged).',
-    here: 'The latest value fills the Subsoil Water Bucket on the forecaster.',
+    here: 'Rescaled between the site’s own dry and wet extremes to plant-available water, then × PAWC.',
     status: 'used',
   },
   {
     term: 'Soil moisture anomaly',
     what: 'The difference between today’s soil moisture and the long-term average for the same time of year. A negative anomaly means drier than normal, even if the raw number looks fine. This is how drought monitors flag emerging dry spells.',
-    here: 'Calculated live on this page from the 10 years of GWETROOT already downloaded. The forecast itself uses the raw value.',
+    here: 'Calculated live on this page from the 10 years of GWETROOT already downloaded.',
     status: 'partial',
   },
   {
     term: 'Water-balance indicators',
     what: 'Bookkeeping for paddock water: what goes in (stored soil water and rain) against what goes out (crop use and evaporation). Plant-available water capacity (PAWC) is the size of the soil’s “bucket”.',
-    here: 'The water ratio (supply ÷ crop demand) decides water stress. Below 20% of demand the crop fails. PAWC is set per hub or with the slider.',
+    here: 'Water supply (soil water + rain + irrigation − evaporation) × water-use efficiency gives the water-limited yield. PAWC is set per hub or with the slider.',
     status: 'used',
   },
   {
     term: 'Evapotranspiration (ET)',
     what: 'Evaporation from the soil plus transpiration through leaves: the total water a crop paddock uses. It rises with heat, sunlight, wind and dry air. NASA’s ECOSTRESS instrument maps actual ET from space using land-surface temperature.',
-    here: 'Approximated with fixed crop water demands and fixed loss factors. Using ECOSTRESS or NASA POWER evaporation data is a natural upgrade.',
+    here: 'Approximated with a fixed evaporation loss and crop water-use efficiency. Using ECOSTRESS or NASA POWER evaporation data is a natural upgrade.',
     status: 'partial',
   },
   {

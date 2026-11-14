@@ -1,17 +1,28 @@
+import type { ReactNode } from 'react'
 import { CalendarCheck, ChartLine, ChartPie, Check, Crown, Flame, Hourglass, Leaf, ShieldHalf, Snowflake, Sprout, Thermometer, TriangleAlert, Weight, Wheat } from 'lucide-react'
 import { formatNitrogen } from '../data/crops'
 import type { CropResult } from '../engine/model'
 import { aud, longDate } from './format'
+import type { AreaUnit } from './units'
+import { fmtArea, fmtPerArea, fmtYield } from './units'
 
-export function WinnerBanner({ winner, placeName, bucketPct }: { winner: CropResult; placeName: string; bucketPct: number | null }) {
+export interface OtherWindow {
+  label: string
+  sowDate: Date
+  best: CropResult
+  onSwitch: () => void
+}
+
+export function WinnerBanner({ winner, placeName, other, areaHa, unit }: { winner: CropResult; placeName: string; other: OtherWindow | null; areaHa: number; unit: AreaUnit }) {
   const c = winner.crop
+  if (winner.netProfit < 0) return <NoProfitBanner winner={winner} placeName={placeName} other={other} areaHa={areaHa} unit={unit} />
   return (
     <section className="relative overflow-hidden rounded-2xl border-2 border-emerald-500/50 bg-gradient-to-r from-emerald-900/70 via-emerald-800/50 to-space-800 p-5 shadow-2xl">
       <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
         <div>
           <div className="mb-1 flex flex-wrap items-center gap-2">
             <span className="flex items-center gap-1 rounded-full bg-amber-400 px-2.5 py-0.5 text-[11px] font-bold text-space-900 shadow">
-              <Crown className="size-3" /> TOP INVESTMENT PICK
+              <Crown className="size-3" /> TOP CROP PICK
             </span>
             <span className="text-xs font-semibold text-emerald-300">Top ranked for {placeName}</span>
           </div>
@@ -19,17 +30,61 @@ export function WinnerBanner({ winner, placeName, bucketPct }: { winner: CropRes
             {c.name} <span className="text-base font-semibold text-emerald-200">({c.category})</span>
           </h3>
           <p className="mt-1 max-w-xl text-xs text-slate-300">
-            Starting from a <strong>{bucketPct ?? '–'}% subsoil bucket</strong> and replayed across <strong>{winner.years.length} past seasons</strong> of NASA
-            weather, {c.name} {winner.daysToHarvest !== null ? <>finishes in <strong>{winner.daysToHarvest} days</strong></> : <>does not reliably mature</>}, lost money in{' '}
+            Replayed across <strong>{winner.years.length} past seasons</strong> of NASA weather
+            {winner.startWaterSource === 'today' ? <> from today’s measured soil water</> : <>, each from that year’s own soil water</>}, {c.name} {winner.daysToHarvest !== null ? <>finishes in <strong>{winner.daysToHarvest} days</strong></> : <>does not reliably mature</>}, lost money in{' '}
             <strong>{Math.round(winner.lossProbability * 100)}%</strong> of seasons, and leaves <strong>{formatNitrogen(c.nitrogenKgHa)}</strong>.
           </p>
         </div>
         <div className="shrink-0 rounded-xl border border-emerald-500/30 bg-space-900/60 p-3 sm:text-right">
-          <span className="block text-[10px] font-bold uppercase text-slate-400">Expected net profit</span>
+          <span className="block text-[10px] font-bold uppercase text-slate-400">Expected gross margin</span>
           <span className={`font-mono text-2xl font-black ${winner.netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{aud(winner.netProfit, true)}</span>
-          <span className="block font-mono text-xs text-slate-300">ROI {winner.roiPct}% · score {winner.score}</span>
+          <span className="block font-mono text-xs text-slate-300">
+            {winner.roiPct}% return on growing costs · score {winner.score}
+          </span>
         </div>
       </div>
+      <p className="mt-3 text-[10px] text-emerald-100/60">Indicative planning tool based on past seasons. Not financial advice: check prices, costs and local agronomy before you commit.</p>
+    </section>
+  )
+}
+
+/** Shown when even the best in-season crop is expected to lose money: say so plainly. */
+function NoProfitBanner({ winner, placeName, other, areaHa, unit }: { winner: CropResult; placeName: string; other: OtherWindow | null; areaHa: number; unit: AreaUnit }) {
+  const otherPays = other && other.best.netProfit > 0 && !other.best.offSeason
+  return (
+    <section className="rounded-2xl border-2 border-amber-500/50 bg-gradient-to-r from-amber-950/60 via-space-800 to-space-800 p-5 shadow-2xl">
+      <div className="mb-1 flex flex-wrap items-center gap-2">
+        <span className="flex items-center gap-1 rounded-full bg-amber-400 px-2.5 py-0.5 text-[11px] font-bold text-space-900 shadow">
+          <TriangleAlert className="size-3" /> NO CROP EXPECTED TO PAY
+        </span>
+        <span className="text-xs font-semibold text-amber-200">{placeName}</span>
+      </div>
+      <h3 className="text-xl font-black tracking-tight text-white">Planting now is likely to lose money</h3>
+      <p className="mt-1 max-w-3xl text-xs text-slate-300">
+        {winner.startWaterSource === 'today' ? (
+          <>
+            NASA soil moisture says the profile is at <strong>{Math.round(winner.avgStartWaterMm)} mm</strong> of plant-available water today.
+          </>
+        ) : (
+          <>Stored soil water at sowing averages {Math.round(winner.avgStartWaterMm)} mm in past seasons.</>
+        )}{' '}
+        Even the least-bad option, <strong>{winner.crop.name}</strong>, lost money in <strong>{Math.round(winner.lossProbability * 100)}%</strong> of past seasons (expected{' '}
+        {fmtPerArea(winner.netProfit / areaHa, unit, true)}).
+      </p>
+      {otherPays && other ? (
+        <div className="mt-3 flex flex-col items-start justify-between gap-3 rounded-xl border border-emerald-500/40 bg-emerald-950/40 p-3 sm:flex-row sm:items-center">
+          <p className="text-xs text-emerald-100">
+            Better bet: wait for the <strong>{other.label.toLowerCase()}</strong> window (sow {longDate(other.sowDate)}) and grow <strong>{other.best.crop.name}</strong>, with an expected{' '}
+            <strong>{fmtPerArea(other.best.netProfit / areaHa, unit, true)}</strong> and losses in {Math.round(other.best.lossProbability * 100)}% of past seasons.
+          </p>
+          <button onClick={other.onSwitch} className="shrink-0 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500">
+            Show {other.label.toLowerCase()} plan
+          </button>
+        </div>
+      ) : (
+        <p className="mt-2 text-xs text-amber-200">Consider fallowing to store rain, or irrigating, and check again after the next good fall.</p>
+      )}
+      <p className="mt-3 text-[10px] text-slate-400">Indicative planning tool based on past seasons. Not financial advice.</p>
     </section>
   )
 }
@@ -62,7 +117,8 @@ export function Leaderboard({
   onSelect,
   scientist,
   placeName,
-  acres,
+  areaHa,
+  unit,
   rainAnomalyPct,
   tempAnomalyC,
 }: {
@@ -71,7 +127,8 @@ export function Leaderboard({
   onSelect: (id: string) => void
   scientist: boolean
   placeName: string
-  acres: number
+  areaHa: number
+  unit: AreaUnit
   rainAnomalyPct: number
   tempAnomalyC: number
 }) {
@@ -83,7 +140,7 @@ export function Leaderboard({
             <ChartLine className="size-4 text-emerald-400" /> Season Investment Leaderboard
           </h2>
           <p className="mt-0.5 font-mono text-xs text-slate-400">
-            📍 {placeName} · {acres.toLocaleString()} acres · temp +{tempAnomalyC.toFixed(1)}°C · rain {rainAnomalyPct > 0 ? '+' : ''}
+            📍 {placeName} · {fmtArea(areaHa, unit)} · temp +{tempAnomalyC.toFixed(1)}°C · rain {rainAnomalyPct > 0 ? '+' : ''}
             {rainAnomalyPct}% · ranked by risk-adjusted return
           </p>
         </div>
@@ -126,7 +183,7 @@ export function Leaderboard({
                     </span>
                     <span className="flex items-center gap-1">
                       <Weight className="size-3 text-cyan-400" />
-                      {r.yieldAc.toFixed(2)} t/ac
+                      {fmtYield(r.yieldTHa, unit)}
                     </span>
                     <span className={r.lossProbability > 0.3 ? 'text-rose-300' : ''}>loss risk {Math.round(r.lossProbability * 100)}%</span>
                     <span className={r.crop.nitrogenKgHa > 0 ? 'font-semibold text-emerald-300' : ''}>{formatNitrogen(r.crop.nitrogenKgHa)}</span>
@@ -147,6 +204,7 @@ export function Leaderboard({
                           {r.avgFrostDays.toFixed(1)} frost d
                         </span>
                         <span>water ratio {r.avgWaterRatio.toFixed(2)}</span>
+                        <span>start water {Math.round(r.avgStartWaterMm)} mm</span>
                       </>
                     )}
                   </div>
@@ -154,7 +212,9 @@ export function Leaderboard({
               </div>
               <div className="shrink-0 sm:text-right">
                 <span className={`font-mono text-base font-black ${r.netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{aud(r.netProfit, true)}</span>
-                <span className="block font-mono text-[10px] text-slate-400">ROI {r.roiPct}%</span>
+                <span className="block font-mono text-[10px] text-slate-400">
+                  {fmtPerArea(r.netProfit / areaHa, unit, true)} · {r.roiPct}% return
+                </span>
               </div>
             </button>
             </div>
@@ -165,11 +225,10 @@ export function Leaderboard({
   )
 }
 
-export function DeepDive({ r, acres, scientist }: { r: CropResult; acres: number; scientist: boolean }) {
+export function DeepDive({ r, areaHa, unit, scientist, children }: { r: CropResult; areaHa: number; unit: AreaUnit; scientist: boolean; children?: ReactNode }) {
   const c = r.crop
   const ph = r.phaseDays
   const total = ph ? ph.vegetative + ph.flowering + ph.ripening : 1
-  const yieldLossPct = Math.round((1 - r.yieldAc / c.baseYieldAc) * 100)
 
   return (
     <section className="space-y-4 rounded-2xl border border-space-700 bg-space-800 p-5 shadow-lg">
@@ -224,31 +283,36 @@ export function DeepDive({ r, acres, scientist }: { r: CropResult; acres: number
         <p className="text-[11px] leading-snug text-slate-400">
           Thermal model: {c.targetGdd.toLocaleString()}°C·d needed above {c.tBase}°C base
           {r.matureShare < 1 && r.matureShare > 0 && <> — matured in only {Math.round(r.matureShare * 100)}% of past seasons</>}.{' '}
-          {r.avgWaterRatio < 0.8 ? (
-            <span className="font-bold text-rose-400">⚠ Water deficit — expected yield {yieldLossPct}% below potential.</span>
+          {r.waterLimitedShare >= 0.5 ? (
+            <span className="font-bold text-amber-300">
+              💧 Water-limited in {Math.round(r.waterLimitedShare * 100)}% of past seasons (avg {Math.round(r.avgStartWaterMm)} mm soil water at sowing + {Math.round(r.avgRainMm)} mm
+              rain).
+            </span>
           ) : (
-            <span className="font-bold text-emerald-400">✓ Stored + in-season water adequate for grain fill.</span>
+            <span className="font-bold text-emerald-400">✓ Usually enough water: sunlight, not water, sets the yield in most seasons.</span>
           )}{' '}
           {r.avgHeatDays >= 3 && <span className="font-bold text-amber-300">🔥 ~{r.avgHeatDays.toFixed(0)} heat-stress days (&gt;{c.heatThresholdC}°C) at flowering.</span>}{' '}
           {r.avgFrostDays >= 1 && <span className="font-bold text-sky-300">❄ ~{r.avgFrostDays.toFixed(1)} frost days at flowering.</span>}
         </p>
       </div>
 
-      {scientist ? <YieldCuts r={r} /> : <ResilienceCard r={r} />}
+      {scientist ? <YieldCuts r={r} unit={unit} /> : <ResilienceCard r={r} />}
+
+      {children}
 
       <div className="grid grid-cols-2 gap-3 text-center sm:grid-cols-4">
-        <Fin label="Expected yield" value={`${r.yieldAc.toFixed(2)} t/ac`} sub={`${Math.round(r.totalTonnes).toLocaleString()} t total`} cls="text-white" />
-        <Fin label="Gross revenue" value={aud(r.grossRevenue)} sub={`@ $${c.priceAudPerT}/t`} cls="text-cyan-400" />
+        <Fin label="Expected yield" value={fmtYield(r.yieldTHa, unit)} sub={`${Math.round(r.totalTonnes).toLocaleString()} t total`} cls="text-white" />
+        <Fin label="Gross revenue" value={aud(r.grossRevenue)} sub={`@ $${Math.round(r.priceAudPerT)}/t farm-gate`} cls="text-cyan-400" />
         <Fin
-          label="Total costs"
+          label="Growing costs"
           value={aud(r.totalCosts)}
-          sub={`${aud(r.totalCosts / acres)} / acre${r.irrigationCost > 0 ? ` incl. ${aud(r.irrigationCost)} water` : ''}`}
+          sub={`${fmtPerArea(r.totalCosts / areaHa, unit)}${r.irrigationCost > 0 ? ` incl. ${aud(r.irrigationCost)} water` : ''}`}
           cls="text-rose-400"
         />
         <Fin
-          label="Net profit"
+          label="Gross margin"
           value={aud(r.netProfit, true)}
-          sub={`${r.roiPct}% ROI (${aud(r.netProfit / acres)}/ac)`}
+          sub={`${fmtPerArea(r.netProfit / areaHa, unit, true)} · ${r.roiPct}% return`}
           cls={r.netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}
           highlight
         />
@@ -262,24 +326,26 @@ export function DeepDive({ r, acres, scientist }: { r: CropResult; acres: number
           <span className="font-mono font-bold text-emerald-300">{formatNitrogen(c.nitrogenKgHa)}</span>
         </div>
         <div className="flex items-center justify-between rounded-xl border border-rose-900/40 bg-rose-950/30 p-3 text-xs">
-          <span className="text-slate-300">Worst past season</span>
+          <span className="text-slate-300">Worst past season ({Math.round(r.lossProbability * 100)}% lost money)</span>
           <span className={`font-mono font-bold ${r.worstProfit >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>{aud(r.worstProfit, true)}</span>
         </div>
       </div>
 
       {scientist && (
         <div className="overflow-x-auto rounded-lg border border-space-700 bg-space-950 p-3">
-          <p className="mb-2 font-mono text-xs font-bold text-emerald-400">// Analogue-season replay (NASA POWER daily weather)</p>
+          <p className="mb-2 font-mono text-xs font-bold text-emerald-400">// Analogue-season replay (NASA POWER daily weather) · Water = WUE × (soil + rain − E) · Sun = solar × RUE × HI</p>
           <table className="w-full font-mono text-[11px] text-slate-300">
             <thead className="text-slate-500">
               <tr>
                 <th className="text-left">Sown</th>
                 <th>Days</th>
+                <th>Soil mm</th>
                 <th>Rain mm</th>
-                <th>Water ratio</th>
+                <th>Water t/ha</th>
+                <th>Sun t/ha</th>
                 <th>Heat d</th>
                 <th>Frost d</th>
-                <th>Yield ×</th>
+                <th>Yield t/ha</th>
                 <th className="text-right">Profit</th>
               </tr>
             </thead>
@@ -288,11 +354,13 @@ export function DeepDive({ r, acres, scientist }: { r: CropResult; acres: number
                 <tr key={y.sowYear} className="text-center">
                   <td className="text-left">{y.sowYear}</td>
                   <td>{y.days ?? '—'}</td>
+                  <td>{Math.round(y.startWaterMm)}</td>
                   <td>{Math.round(y.rainMm)}</td>
-                  <td>{y.waterRatio.toFixed(2)}</td>
+                  <td>{y.waterLimitedTHa.toFixed(2)}</td>
+                  <td>{y.radiationLimitedTHa.toFixed(2)}</td>
                   <td>{y.heatDays}</td>
                   <td>{y.frostDays}</td>
-                  <td>{y.yieldFactor.toFixed(2)}</td>
+                  <td>{y.yieldTHa.toFixed(2)}</td>
                   <td className={`text-right ${y.profit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{aud(y.profit, true)}</td>
                 </tr>
               ))}
@@ -364,16 +432,12 @@ function Badge({ label, value, ok }: { label: string; value: string; ok: boolean
   )
 }
 
-/** NASA Telemetry Mode: how potential yield is cut down to the expected yield. */
-function YieldCuts({ r }: { r: CropResult }) {
-  const c = r.crop
-  const realisation = r.yieldAc / c.baseYieldAc
-  const tile = (label: string, value: number, sub: string, title: string) => (
+/** NASA Telemetry Mode: which limit sets the yield, season-averaged. */
+function YieldCuts({ r, unit }: { r: CropResult; unit: AreaUnit }) {
+  const tile = (label: string, value: string, sub: string, title: string) => (
     <div className="rounded-lg border border-space-700 bg-space-800/80 p-2" title={title}>
       <span className="block truncate text-[10px] text-slate-400">{label}</span>
-      <span className={`mt-0.5 block font-mono text-xs font-bold ${value >= 0.95 ? 'text-emerald-400' : value >= 0.7 ? 'text-amber-400' : 'text-rose-400'}`}>
-        {value.toFixed(2)}
-      </span>
+      <span className="mt-0.5 block font-mono text-xs font-bold text-white">{value}</span>
       <span className="block truncate font-mono text-[9px] text-slate-500">{sub}</span>
     </div>
   )
@@ -381,25 +445,27 @@ function YieldCuts({ r }: { r: CropResult }) {
     <div className="space-y-3 rounded-xl border border-cyan-500/30 bg-space-900/90 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-space-700 pb-2">
         <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-200">
-          <ChartPie className="size-3.5 text-cyan-400" /> Yield Cuts (season averages)
+          <ChartPie className="size-3.5 text-cyan-400" /> What limits the yield (season averages)
         </span>
-        <span className="rounded border border-space-700 bg-space-800 px-2 py-0.5 font-mono text-[10px] text-cyan-300">Yield = potential × water × stress × rotation</span>
+        <span className="rounded border border-space-700 bg-space-800 px-2 py-0.5 font-mono text-[10px] text-cyan-300">
+          Yield = min(water, sun) × heat/frost × rotation
+        </span>
       </div>
       <div className="grid grid-cols-2 gap-2 text-center text-xs sm:grid-cols-4">
-        {tile('Water supply', r.avgWaterFactor, `${Math.round(r.avgWaterRatio * 100)}% of need`, 'Stored soil water + 80% of rain + irrigation, vs crop demand')}
-        {tile('Heat & frost', r.avgStressFactor, `${r.avgHeatDays.toFixed(1)} hot · ${r.avgFrostDays.toFixed(1)} frost d`, 'Damage from hot/frosty days during flowering & grain fill')}
-        {tile('Maturity', r.matureShare, `${Math.round(r.matureShare * 100)}% of seasons`, 'Share of past seasons with enough thermal time to finish')}
-        {tile('Rotation', r.rotation.yieldMult, r.rotation.tone === 'neutral' ? 'no effect' : r.rotation.tone === 'good' ? 'boost' : 'penalty', r.rotation.note)}
+        {tile('Water-limited', fmtYield(r.avgWaterLimitedTHa, unit), `WUE ${r.crop.wueKgHaMm} kg/ha/mm`, 'French–Schultz: WUE × (soil water + rain + irrigation − evaporation)')}
+        {tile('Sunlight-limited', fmtYield(r.avgRadiationLimitedTHa, unit), `RUE ${r.crop.rueGPerMj} · HI ${r.crop.harvestIndex}`, 'Season solar radiation × interception × RUE × harvest index')}
+        {tile('Heat & frost', `× ${r.avgStressFactor.toFixed(2)}`, `${r.avgHeatDays.toFixed(1)} hot · ${r.avgFrostDays.toFixed(1)} frost d`, 'Damage from hot/frosty days during flowering & grain fill')}
+        {tile('Rotation', `× ${r.rotation.yieldMult.toFixed(2)}`, r.rotation.tone === 'neutral' ? 'no effect' : r.rotation.tone === 'good' ? 'boost' : 'penalty', r.rotation.note)}
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-space-800 bg-space-950 p-2.5 font-mono text-[11px] text-slate-300">
         <span>
-          <span className="text-slate-500">Realised:</span> {c.baseYieldAc.toFixed(2)} t/ac × {realisation.toFixed(2)} = <strong className="text-white">{r.yieldAc.toFixed(2)} t/ac</strong>
+          <span className="text-slate-500">Expected:</span> <strong className="text-white">{fmtYield(r.yieldTHa, unit)}</strong> · water-limited in{' '}
+          {Math.round(r.waterLimitedShare * 100)}% of seasons · matured in {Math.round(r.matureShare * 100)}%
         </span>
         <span className="text-[10px] text-slate-400">
           Irrigation cost: <span className="font-bold text-cyan-300">{aud(r.irrigationCost)}</span>
         </span>
       </div>
-      <p className="text-[10px] text-slate-500">Factors are averaged across past seasons separately, so they don’t multiply exactly to the realised figure.</p>
     </div>
   )
 }

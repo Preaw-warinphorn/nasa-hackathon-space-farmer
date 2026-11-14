@@ -18,23 +18,23 @@ export type RotationTone = 'good' | 'bad' | 'neutral'
 
 export interface RotationEffect {
   yieldMult: number
-  /** Saved input cost (AUD/acre), e.g. less nitrogen fertiliser after a legume. */
-  costSavingAudPerAc: number
+  /** Saved input cost (AUD/ha), e.g. less nitrogen fertiliser after a legume. */
+  costSavingAudPerHa: number
   /** Added to the 0–100 investment score. */
   scoreBonus: number
   note: string
   tone: RotationTone
 }
 
-const NEUTRAL: RotationEffect = { yieldMult: 1, costSavingAudPerAc: 0, scoreBonus: 0, note: 'Standard rotation fit.', tone: 'neutral' }
+const NEUTRAL: RotationEffect = { yieldMult: 1, costSavingAudPerHa: 0, scoreBonus: 0, note: 'Standard rotation fit.', tone: 'neutral' }
 
 const CEREALS = new Set(['wheat', 'barley'])
 const PULSES = new Set(['chickpea', 'mungbean'])
 
 export function rotationEffect(prev: PreviousCrop, cropId: string): RotationEffect {
-  const fx = (yieldMult: number, scoreBonus: number, note: string, costSavingAudPerAc = 0): RotationEffect => ({
+  const fx = (yieldMult: number, scoreBonus: number, note: string, costSavingAudPerHa = 0): RotationEffect => ({
     yieldMult,
-    costSavingAudPerAc,
+    costSavingAudPerHa,
     scoreBonus,
     note,
     tone: yieldMult > 1 ? 'good' : yieldMult < 1 ? 'bad' : 'neutral',
@@ -49,7 +49,7 @@ export function rotationEffect(prev: PreviousCrop, cropId: string): RotationEffe
       return fx(1.05, 5, "Good break: crops after canola benefit from its disease-break (biofumigation) effect.")
     case 'pulse':
       if (CEREALS.has(cropId) || cropId === 'sorghum')
-        return fx(1.15, 12, 'Legume legacy: ~50 kg N/ha left by last year’s pulse, about +15% yield and $45/ac less fertiliser.', 45)
+        return fx(1.15, 12, 'Legume legacy: ~50 kg N/ha left by last year’s pulse, about +15% yield and ~$90/ha less nitrogen fertiliser.', 90)
       if (cropId === 'chickpea') return fx(0.88, -10, 'Pulse on pulse: higher Ascochyta blight and disease risk.')
       return NEUTRAL
     case 'cotton':

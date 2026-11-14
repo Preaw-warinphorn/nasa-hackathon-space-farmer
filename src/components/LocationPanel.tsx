@@ -7,7 +7,11 @@ import { HUBS, isInAustralia } from '../data/hubs'
 import type { PreviousCrop } from '../data/rotation'
 import { IRRIGATION_AUD_PER_MM_HA, PREVIOUS_CROPS } from '../data/rotation'
 import type { LatLon } from '../engine/geo'
-import { dedupePoints, polygonAreaAcres, polygonCenter } from '../engine/geo'
+import { dedupePoints, polygonAreaHa, polygonCenter } from '../engine/geo'
+import { nextSowDate, SOWING_WINDOWS } from '../engine/model'
+import { shortDate } from './format'
+import type { AreaUnit } from './units'
+import { fmtArea, fromUnit, HA_PER_AC, toUnit } from './units'
 import type { FlyTarget } from './MapPicker'
 import { MapPicker } from './MapPicker'
 
@@ -15,7 +19,8 @@ interface Props {
   lat: number
   lon: number
   hubId: string | null
-  acres: number
+  areaHa: number
+  unit: AreaUnit
   season: Season
   rainAnomalyPct: number
   tempAnomalyC: number
@@ -24,7 +29,7 @@ interface Props {
   previousCrop: PreviousCrop
   onHub: (hub: Hub) => void
   onPick: (lat: number, lon: number, name?: string) => void
-  onAcres: (v: number) => void
+  onAreaHa: (v: number) => void
   onSeason: (s: Season) => void
   onRain: (v: number) => void
   onTemp: (v: number) => void
@@ -106,13 +111,13 @@ export function LocationPanel(p: Props) {
       setStatus({ kind: 'error', text: 'Click at least 3 corners around your paddock first.' })
       return
     }
-    const acres = Math.max(1, Math.round(polygonAreaAcres(pts)))
+    const ha = Math.max(0.5, polygonAreaHa(pts))
     const [lat, lon] = polygonCenter(pts)
     setBoundary(pts)
     setDrawing(false)
     setPoints([])
     setStatus({ kind: 'idle' })
-    p.onAcres(acres)
+    p.onAreaHa(Math.round(ha * 10) / 10)
     p.onPick(lat, lon)
   }
   const clearBoundary = () => {
@@ -121,8 +126,13 @@ export function LocationPanel(p: Props) {
     setDrawing(false)
   }
 
-  const liveAcres = drawing && points.length >= 3 ? Math.round(polygonAreaAcres(dedupePoints(points))) : null
-  const boundaryAcres = boundary ? Math.round(polygonAreaAcres(boundary)) : null
+  const liveHa = drawing && points.length >= 3 ? polygonAreaHa(dedupePoints(points)) : null
+  const boundaryHa = boundary ? polygonAreaHa(boundary) : null
+  // Slider works in the display unit; the app stores hectares.
+  const sliderMin = p.unit === 'ha' ? 20 : 50
+  const sliderMax = p.unit === 'ha' ? 1500 : 3500
+  const sliderStep = p.unit === 'ha' ? 5 : 10
+  const shown = Math.round(toUnit(p.areaHa, p.unit))
   const prevNote = PREV_NOTES[p.previousCrop]
 
   return (
@@ -203,9 +213,9 @@ export function LocationPanel(p: Props) {
               {expanded ? <Shrink className="size-3.5" /> : <Expand className="size-3.5" />} {expanded ? 'Normal size' : 'Expand map'}
             </button>
           </div>
-          {boundaryAcres !== null && !drawing && (
+          {boundaryHa !== null && !drawing && (
             <span className="rounded border border-emerald-800 bg-emerald-950 px-2.5 py-1 font-mono text-[11px] font-bold text-emerald-300">
-              Paddock: <span className="text-white">{boundaryAcres.toLocaleString()} ac</span>
+              Paddock: <span className="text-white">{fmtArea(boundaryHa, p.unit)}</span>
             </span>
           )}
         </div>
@@ -214,13 +224,13 @@ export function LocationPanel(p: Props) {
       {drawing && (
         <div className="flex items-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-950/70 p-2.5 text-xs text-emerald-300">
           <Crosshair className="size-3.5 shrink-0" />
-          {liveAcres === null ? (
+          {liveHa === null ? (
             <span>
               Zoom in to your paddock, then click each corner along the fence. Click <strong>Finish boundary</strong> (or double-click) to measure it.
             </span>
           ) : (
             <span>
-              {dedupePoints(points).length} corners placed. Area: <strong className="rounded bg-space-900 px-2 py-0.5 font-mono text-sm text-white">{liveAcres.toLocaleString()} acres</strong>
+              {dedupePoints(points).length} corners placed. Area: <strong className="rounded bg-space-900 px-2 py-0.5 font-mono text-sm text-white">{fmtArea(liveHa, p.unit)}</strong>
             </span>
           )}
         </div>
@@ -281,17 +291,17 @@ export function LocationPanel(p: Props) {
         <Card>
           <div className="mb-1 flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-300">Paddock size</span>
-            <span className="font-mono text-xs font-bold text-emerald-400">{p.acres.toLocaleString()} ac</span>
+            <span className="font-mono text-xs font-bold text-emerald-400">{fmtArea(p.areaHa, p.unit)}</span>
           </div>
           <input
             type="range"
-            min={Math.min(50, p.acres)}
-            max={Math.max(3000, p.acres)}
-            step={10}
-            value={p.acres}
-            onChange={(e) => p.onAcres(Number(e.target.value))}
+            min={Math.min(sliderMin, shown)}
+            max={Math.max(sliderMax, shown)}
+            step={sliderStep}
+            value={shown}
+            onChange={(e) => p.onAreaHa(fromUnit(Number(e.target.value), p.unit))}
             className="accent-emerald-500"
-            aria-label="Paddock size in acres"
+            aria-label={`Paddock size in ${p.unit === 'ha' ? 'hectares' : 'acres'}`}
           />
           <span className="mt-1 block text-[10px] text-slate-400">Set by the pen tool, or drag</span>
         </Card>
@@ -306,10 +316,13 @@ export function LocationPanel(p: Props) {
             onChange={(e) => p.onSeason(e.target.value as Season)}
             className="w-full rounded-lg border border-emerald-500/50 bg-space-900 p-2 text-xs font-semibold text-emerald-300 focus:border-emerald-400 focus:outline-none"
           >
-            <option value="winter">Autumn / Winter (15 May)</option>
-            <option value="spring">Spring / Summer (15 Oct)</option>
+            {(['spring', 'winter'] as const).map((s) => (
+              <option key={s} value={s}>
+                {SOWING_WINDOWS[s].label} · {shortDate(nextSowDate(s))}
+              </option>
+            ))}
           </select>
-          <span className="mt-1 block text-[10px] text-slate-400">Matches the seasonal rain window</span>
+          <span className="mt-1 block text-[10px] text-slate-400">Defaults to the next sowing window. Inside a window, sowing is today.</span>
         </Card>
 
         <Card>
@@ -327,7 +340,9 @@ export function LocationPanel(p: Props) {
             className="accent-cyan-400"
             aria-label="Supplemental irrigation in mm"
           />
-          <span className="mt-1 block text-right font-mono text-[10px] text-slate-400">${IRRIGATION_AUD_PER_MM_HA.toFixed(2)}/mm/ha</span>
+          <span className="mt-1 block text-right font-mono text-[10px] text-slate-400">
+            ${(p.unit === 'ha' ? IRRIGATION_AUD_PER_MM_HA : IRRIGATION_AUD_PER_MM_HA * HA_PER_AC).toFixed(2)}/mm/{p.unit}
+          </span>
         </Card>
 
         <Card>

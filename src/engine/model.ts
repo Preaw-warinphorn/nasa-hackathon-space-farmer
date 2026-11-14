@@ -1,31 +1,53 @@
-// AcreCast agronomic & economic engine. Pure functions — no DOM, no network.
+// AcreCast agronomic & economic engine. Pure functions: no DOM, no network.
 //
-// Approach: take today's measured root-zone soil moisture (NASA POWER GWETROOT) as the starting
-// water bucket, then replay the coming season against every past year of NASA POWER daily weather
-// at this location (an analogue-year ensemble). Each replay accumulates growing degree days to find
-// harvest maturity, counts heat/frost stress during flowering & grain fill, and runs a simple water
-// balance. Results across years give an expected return *and* a downside risk.
+// Approach: replay the coming season against every past year of NASA POWER daily weather at this
+// location (an analogue-year ensemble). For each past year and crop:
+//  1. Starting soil water: if sowing is within STARTING_WATER_NOW_DAYS of today, every replay starts
+//     from today's measured soil water (we know it). Otherwise each replay starts from that year's own
+//     soil water on its sowing date, so drought years start dry.
+//     GWETROOT is a saturation index, not plant-available water: it is rescaled between this site's
+//     own dry end (≈ wilting point) and wet end (≈ field capacity) before multiplying by PAWC.
+//  2. Thermal time (GDD) to maturity → days to harvest; heat & frost days during flowering.
+//  3. Water-limited yield (French–Schultz): WUE × (soil water + in-season rain + irrigation − E).
+//  4. Radiation-limited yield: RUE × intercepted sunlight (ALLSKY_SFC_SW_DWN) × harvest index.
+//  5. Yield = min(water-, radiation-limited, crop ceiling) × heat/frost damage × rotation effect.
+// The spread of outcomes across years gives an expected return *and* a downside risk.
 
 import type { Crop, Season } from '../data/crops'
 import type { PreviousCrop, RotationEffect } from '../data/rotation'
-import { HA_PER_ACRE, IRRIGATION_AUD_PER_MM_HA, rotationEffect } from '../data/rotation'
+import { IRRIGATION_AUD_PER_MM_HA, rotationEffect } from '../data/rotation'
 import type { DailySeries } from '../nasa/power'
 
 export const MAX_SEASON_DAYS = 240
-const HISTORY_SPAN_YEARS = 40
 export const FROST_THRESHOLD_C = 1 // 2 m air temperature at which ground frost becomes likely
-/** Share of in-season rainfall that becomes plant-available (rest lost to runoff/evaporation). */
-export const RAIN_EFFICIENCY = 0.8
 export const FLOWERING_START = 0.4
 export const FLOWERING_END = 0.85
-const SOW_DAY: Record<Season, { month: number; day: number }> = {
-  winter: { month: 5, day: 15 },
-  spring: { month: 10, day: 15 },
+/** Average share of sunlight the canopy intercepts over the whole season (low early, high mid-season). */
+export const MEAN_INTERCEPTION = 0.5
+/** If sowing is this close, start every replay from today's measured soil water. */
+export const STARTING_WATER_NOW_DAYS = 30
+/** Percentiles of a site's own GWETROOT record treated as "empty" (wilting point) and "full" (field capacity). */
+export const SOIL_DRY_PCTL = 0.01
+export const SOIL_WET_PCTL = 0.9
+
+export interface SowingWindow {
+  /** First and last calendar day (month, day) of the normal sowing window. */
+  open: { month: number; day: number }
+  close: { month: number; day: number }
+  /** Nominal sowing day used when the window is in the future. */
+  nominal: { month: number; day: number }
+  label: string
+}
+
+export const SOWING_WINDOWS: Record<Season, SowingWindow> = {
+  winter: { open: { month: 4, day: 15 }, close: { month: 6, day: 30 }, nominal: { month: 5, day: 15 }, label: 'Autumn/winter' },
+  spring: { open: { month: 10, day: 1 }, close: { month: 12, day: 31 }, nominal: { month: 10, day: 15 }, label: 'Spring/summer' },
 }
 
 export interface Scenario {
   season: Season
-  acres: number
+  /** Paddock area in hectares. */
+  areaHa: number
   rainAnomalyPct: number
   tempAnomalyC: number
   pawcMm: number
@@ -33,6 +55,8 @@ export interface Scenario {
   irrigationMm?: number
   /** Last season's crop on this paddock (rotation effects). */
   previousCrop?: PreviousCrop
+  /** Per-crop price / cost overrides (A$/t, A$/ha). */
+  economics?: Record<string, { priceAudPerT?: number; costAudPerHa?: number }>
 }
 
 export interface YearRun {
@@ -40,27 +64,34 @@ export interface YearRun {
   matured: boolean
   days: number | null
   rainMm: number
+  /** Plant-available soil water at sowing (mm). */
+  startWaterMm: number
   heatDays: number
   frostDays: number
+  solarMj: number
+  /** Water supply / (water supply needed to reach the radiation-limited yield). */
   waterRatio: number
-  /** Yield multiplier from water supply alone. */
-  waterFactor: number
+  waterLimitedTHa: number
+  radiationLimitedTHa: number
   /** Yield multiplier from heat & frost damage at flowering. */
   stressFactor: number
-  /** Combined yield multiplier incl. rotation (0 if the crop didn't mature). */
-  yieldFactor: number
+  yieldTHa: number
+  profitPerHa: number
   profit: number
 }
 
 export interface CropResult {
   crop: Crop
+  priceAudPerT: number
+  costAudPerHa: number
   years: YearRun[]
   matureShare: number
   daysToHarvest: number | null
   phaseDays: { vegetative: number; flowering: number; ripening: number } | null
   sowDate: Date
   harvestDate: Date | null
-  yieldAc: number
+  startWaterSource: 'today' | 'each-year'
+  yieldTHa: number
   totalTonnes: number
   grossRevenue: number
   totalCosts: number
@@ -72,8 +103,12 @@ export interface CropResult {
   avgFrostDays: number
   avgWaterRatio: number
   avgRainMm: number
-  avgWaterFactor: number
+  avgStartWaterMm: number
+  avgWaterLimitedTHa: number
+  avgRadiationLimitedTHa: number
   avgStressFactor: number
+  /** Share of seasons where water (not sunlight) set the yield. */
+  waterLimitedShare: number
   irrigationCost: number
   rotation: RotationEffect
   offSeason: boolean
@@ -82,9 +117,15 @@ export interface CropResult {
 
 export interface SiteSnapshot {
   latestDate: string
+  /** Latest plant-available water as a fraction of PAWC (after wilting-point rescaling). */
   bucketFraction: number | null
+  /** Latest raw GWETROOT (0–1 saturation index). */
+  gwetRaw: number | null
   bucketDate: string | null
+  soilDry: number
+  soilWet: number
   rain90Mm: number
+  rain90NormalMm: number | null
   tmaxLatest: number
   tminLatest: number
   precipLatest: number
@@ -95,8 +136,6 @@ export interface SiteSnapshot {
   seasonGdd: number
   /** Mean days with Tmax > 32 °C over the same 150-day window. */
   seasonHotDays: number
-  /** Mean rainfall over the same 90-day window (ending on the same calendar day) in earlier years. */
-  rain90NormalMm: number | null
   analogueYears: number
 }
 
@@ -108,6 +147,12 @@ function median(xs: number[]): number {
 
 const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0)
 
+function quantile(xs: number[], q: number): number {
+  const s = xs.filter((x) => !Number.isNaN(x)).sort((a, b) => a - b)
+  if (!s.length) return NaN
+  return s[Math.min(s.length - 1, Math.max(0, Math.round(q * (s.length - 1))))]
+}
+
 function indexByDate(series: DailySeries): Map<string, number> {
   const m = new Map<string, number>()
   series.dates.forEach((d, i) => m.set(d, i))
@@ -118,75 +163,105 @@ function isoDate(y: number, month: number, day: number) {
   return `${y}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
 }
 
-/** Sowing-day indices for every past year whose full season window is covered by the data. */
-export function analogueStarts(series: DailySeries, season: Season, windowDays = MAX_SEASON_DAYS): { year: number; idx: number }[] {
+const dayOfYear = (month: number, day: number) => month * 100 + day
+
+/** Sowing date for a season: today if we're inside the window, otherwise the next nominal date. */
+export function nextSowDate(season: Season, today = new Date()): Date {
+  const w = SOWING_WINDOWS[season]
+  const t = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  const doy = dayOfYear(t.getMonth() + 1, t.getDate())
+  if (doy >= dayOfYear(w.open.month, w.open.day) && doy <= dayOfYear(w.close.month, w.close.day)) return t
+  const d = new Date(t.getFullYear(), w.nominal.month - 1, w.nominal.day)
+  if (d < t) d.setFullYear(d.getFullYear() + 1)
+  return d
+}
+
+/** The season whose sowing date comes soonest (today counts). */
+export function defaultSeason(today = new Date()): Season {
+  return nextSowDate('spring', today) <= nextSowDate('winter', today) ? 'spring' : 'winter'
+}
+
+/** Sowing-day indices, on the given calendar day, for every past year whose season fits in the data. */
+export function analogueStarts(series: DailySeries, sow: { month: number; day: number }, windowDays = MAX_SEASON_DAYS): { year: number; idx: number }[] {
   const idx = indexByDate(series)
-  const { month, day } = SOW_DAY[season]
   const first = Number(series.dates[0].slice(0, 4))
   const lastYear = Number(series.dates[series.dates.length - 1].slice(0, 4))
   const out: { year: number; idx: number }[] = []
   for (let y = first; y <= lastYear; y++) {
-    const i = idx.get(isoDate(y, month, day))
+    // 29 Feb falls back to 28 Feb in non-leap years.
+    const i = idx.get(isoDate(y, sow.month, sow.day)) ?? idx.get(isoDate(y, sow.month, sow.day - 1))
     if (i !== undefined && i + windowDays < series.dates.length) out.push({ year: y, idx: i })
   }
   return out
 }
 
-/** Next upcoming sowing date for the season (today counts as upcoming). */
-export function nextSowDate(season: Season, today = new Date()): Date {
-  const { month, day } = SOW_DAY[season]
-  const t = new Date(today.getFullYear(), today.getMonth(), today.getDate())
-  const d = new Date(today.getFullYear(), month - 1, day)
-  if (d < t) d.setFullYear(d.getFullYear() + 1)
-  return d
-}
-
 /** Latest valid root-zone wetness value (GWETROOT is published with a short lag). */
-export function latestBucket(series: DailySeries): { value: number; date: string } | null {
+export function latestBucket(series: DailySeries): { value: number; date: string; index: number } | null {
   for (let i = series.gwet.length - 1; i >= 0; i--) {
-    if (!Number.isNaN(series.gwet[i])) return { value: series.gwet[i], date: series.dates[i] }
+    if (!Number.isNaN(series.gwet[i])) return { value: series.gwet[i], date: series.dates[i], index: i }
   }
   return null
+}
+
+export interface SoilScale {
+  dry: number
+  wet: number
+}
+
+/** This site's own GWETROOT dry end (≈ wilting point) and wet end (≈ field capacity). */
+export function soilScale(series: DailySeries): SoilScale {
+  const dry = quantile(series.gwet, SOIL_DRY_PCTL)
+  const wet = quantile(series.gwet, SOIL_WET_PCTL)
+  if (Number.isNaN(dry) || Number.isNaN(wet) || wet - dry < 0.05) return { dry: 0.1, wet: 0.9 }
+  return { dry, wet }
+}
+
+/** GWETROOT saturation index → plant-available fraction of PAWC (0 at wilting point, 1 at field capacity). */
+export function plantAvailableFraction(gwet: number, scale: SoilScale): number {
+  if (Number.isNaN(gwet)) return 0.3
+  return Math.min(1, Math.max(0, (gwet - scale.dry) / (scale.wet - scale.dry)))
+}
+
+/** GWETROOT near index i (the record has occasional gaps). */
+function gwetNear(series: DailySeries, i: number): number {
+  for (let k = 0; k < 10; k++) {
+    if (!Number.isNaN(series.gwet[i - k])) return series.gwet[i - k]
+    if (!Number.isNaN(series.gwet[i + k])) return series.gwet[i + k]
+  }
+  return NaN
 }
 
 export function dailyGdd(tmax: number, tmin: number, tBase: number): number {
   return Math.max(0, (tmax + tmin) / 2 - tBase)
 }
 
-/** Share of crop water demand lost to soil evaporation before any grain is set
- *  (cf. the 110 mm evaporation term in French–Schultz water-limited yield). */
-export const WATER_FAILURE_RATIO = 0.2
-
-/** Yield multiplier from water supply/demand. Falls to zero when water runs out: below
- *  WATER_FAILURE_RATIO the crop sets no grain; above it yield rises to 1 at full demand, with a
- *  curve that drops faster for drought-sensitive crops. Surplus water adds at most 15 %. */
-export function waterYieldFactor(waterRatio: number, droughtTolerance: number): number {
-  if (waterRatio >= 1) return Math.min(1.15, 1 + (waterRatio - 1) * 0.2)
-  const usable = Math.max(0, (waterRatio - WATER_FAILURE_RATIO) / (1 - WATER_FAILURE_RATIO))
-  return usable ** (0.6 + 1.6 * (1 - droughtTolerance))
-}
-
-/** Replay one season for one crop starting at series index `start`. */
-export function simulateYear(series: DailySeries, start: number, crop: Crop, sc: Scenario, storedWaterMm: number) {
+/** Replay one season for one crop starting at series index `start`. Yields are t/ha before rotation. */
+export function simulateYear(series: DailySeries, start: number, crop: Crop, sc: Scenario, startWaterMm: number) {
   let gdd = 0
   let rain = 0
+  let solar = 0
   let heatDays = 0
   let frostDays = 0
+  let coolDays = 0
   let days: number | null = null
   let floweringStartDay = 0
   let floweringEndDay = 0
   const rainMult = 1 + sc.rainAnomalyPct / 100
+  let lastSolar = 15
   for (let d = 0; d < MAX_SEASON_DAYS && start + d < series.dates.length; d++) {
     const i = start + d
     const tx = series.tmax[i] + sc.tempAnomalyC
     const tn = series.tmin[i] + sc.tempAnomalyC
     gdd += dailyGdd(tx, tn, crop.tBase)
     rain += series.precip[i] * rainMult
+    if (!Number.isNaN(series.solar[i])) lastSolar = series.solar[i]
+    solar += lastSolar
     const frac = gdd / crop.targetGdd
     if (frac >= FLOWERING_START && !floweringStartDay) floweringStartDay = d + 1
     if (frac >= FLOWERING_START && frac < FLOWERING_END) {
       if (tx > crop.heatThresholdC) heatDays++
       if (tn < FROST_THRESHOLD_C) frostDays++
+      if (crop.podSetMinMeanC !== undefined && (tx + tn) / 2 < crop.podSetMinMeanC) coolDays++
     }
     if (frac >= FLOWERING_END && !floweringEndDay) floweringEndDay = d + 1
     if (gdd >= crop.targetGdd) {
@@ -194,33 +269,80 @@ export function simulateYear(series: DailySeries, start: number, crop: Crop, sc:
       break
     }
   }
-  const waterRatio = (storedWaterMm + rain * RAIN_EFFICIENCY + (sc.irrigationMm ?? 0)) / crop.waterDemandMm
-  const waterFactor = waterYieldFactor(waterRatio, crop.droughtTolerance)
-  const stressFactor = Math.max(0.25, 1 - heatDays * crop.heatLossPerDay - frostDays * crop.frostLossPerDay)
-  const yieldFactor = days !== null ? waterFactor * stressFactor : 0
-  return { days, gdd, rain, heatDays, frostDays, waterRatio, waterFactor, stressFactor, yieldFactor, floweringStartDay, floweringEndDay }
+  const supply = startWaterMm + rain + (sc.irrigationMm ?? 0)
+  const waterLimitedTHa = (crop.wueKgHaMm * Math.max(0, supply - crop.evapLossMm)) / 1000
+  // g/m² → t/ha is ×0.01.
+  const radiationLimitedTHa = Math.min(crop.maxYieldTHa, solar * MEAN_INTERCEPTION * crop.rueGPerMj * crop.harvestIndex * 0.01)
+  const waterNeeded = crop.evapLossMm + (radiationLimitedTHa * 1000) / crop.wueKgHaMm
+  const stressFactor = Math.max(0.25, 1 - heatDays * crop.heatLossPerDay - frostDays * crop.frostLossPerDay - coolDays * (crop.coolLossPerDay ?? 0))
+  const yieldTHa = days !== null ? Math.min(waterLimitedTHa, radiationLimitedTHa) * stressFactor : 0
+  return {
+    days,
+    gdd,
+    rain,
+    solar,
+    heatDays,
+    frostDays,
+    coolDays,
+    waterRatio: supply / waterNeeded,
+    waterLimitedTHa,
+    radiationLimitedTHa,
+    stressFactor,
+    yieldTHa,
+    floweringStartDay,
+    floweringEndDay,
+  }
 }
 
-export function evaluateCrop(series: DailySeries, crop: Crop, sc: Scenario, bucketFraction: number, today = new Date()): CropResult {
-  const starts = analogueStarts(series, sc.season)
-  const stored = bucketFraction * sc.pawcMm
+export interface EvalOptions {
+  today?: Date
+  /** Force a starting-water mode (validation uses 'each-year'). */
+  startWater?: 'today' | 'each-year'
+}
+
+export function evaluateCrop(series: DailySeries, crop: Crop, sc: Scenario, opts: EvalOptions = {}): CropResult {
+  const today = opts.today ?? new Date()
+  const sowDate = nextSowDate(sc.season, today)
+  const sow = { month: sowDate.getMonth() + 1, day: sowDate.getDate() }
+  const starts = analogueStarts(series, sow)
+  const scale = soilScale(series)
+  const latest = latestBucket(series)
+  const daysAway = (sowDate.getTime() - today.getTime()) / 86_400_000
+  const startWaterSource = opts.startWater ?? (latest && daysAway <= STARTING_WATER_NOW_DAYS ? 'today' : 'each-year')
+  const todayWater = latest ? plantAvailableFraction(latest.value, scale) * sc.pawcMm : 0
+
   const rotation = rotationEffect(sc.previousCrop ?? 'none', crop.id)
-  const irrigationCost = (sc.irrigationMm ?? 0) * IRRIGATION_AUD_PER_MM_HA * HA_PER_ACRE * sc.acres
-  const costs = Math.max(80, crop.costAudPerAc - rotation.costSavingAudPerAc) * sc.acres + irrigationCost
-  const sims = starts.map((s) => ({ year: s.year, r: simulateYear(series, s.idx, crop, sc, stored) }))
-  const years: YearRun[] = sims.map(({ year, r }) => ({
-    sowYear: year,
-    matured: r.days !== null,
-    days: r.days,
-    rainMm: r.rain,
-    heatDays: r.heatDays,
-    frostDays: r.frostDays,
-    waterRatio: r.waterRatio,
-    waterFactor: r.waterFactor,
-    stressFactor: r.stressFactor,
-    yieldFactor: r.yieldFactor * rotation.yieldMult,
-    profit: crop.baseYieldAc * r.yieldFactor * rotation.yieldMult * sc.acres * crop.priceAudPerT - costs,
-  }))
+  const ov = sc.economics?.[crop.id]
+  const price = ov?.priceAudPerT ?? crop.priceAudPerT
+  const costPerHa = Math.max(100, (ov?.costAudPerHa ?? crop.costAudPerHa) - rotation.costSavingAudPerHa)
+  const irrigationPerHa = (sc.irrigationMm ?? 0) * IRRIGATION_AUD_PER_MM_HA
+  const costs = (costPerHa + irrigationPerHa) * sc.areaHa
+
+  const sims = starts.map((s) => {
+    const startWater = startWaterSource === 'today' ? todayWater : plantAvailableFraction(gwetNear(series, s.idx), scale) * sc.pawcMm
+    return { year: s.year, startWater, r: simulateYear(series, s.idx, crop, sc, startWater) }
+  })
+  const years: YearRun[] = sims.map(({ year, startWater, r }) => {
+    const y = r.yieldTHa * rotation.yieldMult
+    const profitPerHa = y * price - costPerHa - irrigationPerHa
+    return {
+      sowYear: year,
+      matured: r.days !== null,
+      days: r.days,
+      rainMm: r.rain,
+      startWaterMm: startWater,
+      heatDays: r.heatDays,
+      frostDays: r.frostDays,
+      solarMj: r.solar,
+      waterRatio: r.waterRatio,
+      waterLimitedTHa: r.waterLimitedTHa,
+      radiationLimitedTHa: r.radiationLimitedTHa,
+      stressFactor: r.stressFactor,
+      yieldTHa: y,
+      profitPerHa,
+      profit: profitPerHa * sc.areaHa,
+    }
+  })
 
   const matured = sims.filter((s) => s.r.days !== null)
   const daysToHarvest = matured.length ? Math.round(median(matured.map((s) => s.r.days!))) : null
@@ -232,24 +354,21 @@ export function evaluateCrop(series: DailySeries, crop: Crop, sc: Scenario, buck
           return { vegetative: fs, flowering: Math.max(0, fe - fs), ripening: Math.max(0, daysToHarvest - fe) }
         })()
       : null
-
-  const sowDate = nextSowDate(sc.season, today)
   const harvestDate = daysToHarvest !== null ? new Date(sowDate.getTime() + daysToHarvest * 86_400_000) : null
 
-  const yieldAc = crop.baseYieldAc * mean(years.map((y) => y.yieldFactor))
-  const totalTonnes = yieldAc * sc.acres
-  const grossRevenue = totalTonnes * crop.priceAudPerT
+  const yieldTHa = mean(years.map((y) => y.yieldTHa))
+  const totalTonnes = yieldTHa * sc.areaHa
+  const grossRevenue = totalTonnes * price
   const netProfit = grossRevenue - costs
   const roiPct = costs > 0 ? Math.round((netProfit / costs) * 100) : 0
   const lossProbability = years.length ? years.filter((y) => y.profit < 0).length / years.length : 1
   const worstProfit = years.length ? Math.min(...years.map((y) => y.profit)) : -costs
   const offSeason = crop.preferredSeason !== sc.season
 
-  // Risk-adjusted investment score (0–100): expected ROI, minus how often the crop lost money
-  // across analogue years, plus a rotation credit for nitrogen-fixing legumes.
-  // ROI enters through tanh so very high-margin crops don't all saturate at the top.
-  let score = 40 + 35 * Math.tanh(roiPct / 150) - 35 * lossProbability
-  if (crop.nitrogenKgHa > 0) score += 8
+  // Risk-adjusted score (0–100): expected ROI (saturating) minus how often the crop lost money
+  // across past seasons. A legume's nitrogen benefit belongs to *next* season's crop, so it is
+  // counted there (Previous crop = pulse), not here.
+  let score = 45 + 35 * Math.tanh(roiPct / 80) - 40 * lossProbability
   score += rotation.scoreBonus
   if (offSeason) score -= 20
   if (!matured.length) score = 5
@@ -257,13 +376,16 @@ export function evaluateCrop(series: DailySeries, crop: Crop, sc: Scenario, buck
 
   return {
     crop,
+    priceAudPerT: price,
+    costAudPerHa: costPerHa,
     years,
     matureShare: years.length ? matured.length / years.length : 0,
     daysToHarvest,
     phaseDays,
     sowDate,
     harvestDate,
-    yieldAc,
+    startWaterSource,
+    yieldTHa,
     totalTonnes,
     grossRevenue,
     totalCosts: costs,
@@ -275,30 +397,35 @@ export function evaluateCrop(series: DailySeries, crop: Crop, sc: Scenario, buck
     avgFrostDays: mean(years.map((y) => y.frostDays)),
     avgWaterRatio: mean(years.map((y) => y.waterRatio)),
     avgRainMm: mean(years.map((y) => y.rainMm)),
-    avgWaterFactor: mean(years.map((y) => y.waterFactor)),
+    avgStartWaterMm: mean(years.map((y) => y.startWaterMm)),
+    avgWaterLimitedTHa: mean(years.map((y) => y.waterLimitedTHa)),
+    avgRadiationLimitedTHa: mean(years.map((y) => y.radiationLimitedTHa)),
     avgStressFactor: mean(years.map((y) => y.stressFactor)),
-    irrigationCost,
+    waterLimitedShare: years.length ? years.filter((y) => y.waterLimitedTHa < y.radiationLimitedTHa).length / years.length : 0,
+    irrigationCost: irrigationPerHa * sc.areaHa,
     rotation,
     offSeason,
     score,
   }
 }
 
-export function rankCrops(series: DailySeries, crops: Crop[], sc: Scenario, bucketFraction: number, today = new Date()): CropResult[] {
+export function rankCrops(series: DailySeries, crops: Crop[], sc: Scenario, opts: EvalOptions = {}): CropResult[] {
   return crops
-    .map((c) => evaluateCrop(series, c, sc, bucketFraction, today))
+    .map((c) => evaluateCrop(series, c, sc, opts))
     // Off-season crops always rank below every in-season crop, whatever their economics.
     .sort((a, b) => Number(a.offSeason) - Number(b.offSeason) || b.score - a.score || b.netProfit - a.netProfit)
 }
 
-export function siteSnapshot(series: DailySeries, sc: Pick<Scenario, 'season' | 'tempAnomalyC'>): SiteSnapshot {
+export function siteSnapshot(series: DailySeries, sc: Pick<Scenario, 'season' | 'tempAnomalyC'>, today = new Date()): SiteSnapshot {
   const n = series.dates.length
   const last = n - 1
   const bucket = latestBucket(series)
+  const scale = soilScale(series)
   let rain90 = 0
   for (let i = Math.max(0, n - 90); i < n; i++) rain90 += series.precip[i]
 
-  const starts = analogueStarts(series, sc.season, 150)
+  const sowDate = nextSowDate(sc.season, today)
+  const starts = analogueStarts(series, { month: sowDate.getMonth() + 1, day: sowDate.getDate() }, 150)
   const frost: number[] = []
   const gdd: number[] = []
   const hot: number[] = []
@@ -321,7 +448,7 @@ export function siteSnapshot(series: DailySeries, sc: Pick<Scenario, 'season' | 
   const byDate = indexByDate(series)
   const lastDay = new Date(`${series.dates[last]}T00:00:00Z`)
   const past90: number[] = []
-  for (let k = 1; k <= HISTORY_SPAN_YEARS; k++) {
+  for (let k = 1; k <= 40; k++) {
     const end = byDate.get(isoDate(lastDay.getUTCFullYear() - k, lastDay.getUTCMonth() + 1, lastDay.getUTCDate()))
     if (end === undefined || end < 89) continue
     let r = 0
@@ -337,9 +464,13 @@ export function siteSnapshot(series: DailySeries, sc: Pick<Scenario, 'season' | 
   }
   return {
     latestDate: series.dates[last],
-    bucketFraction: bucket?.value ?? null,
+    bucketFraction: bucket ? plantAvailableFraction(bucket.value, scale) : null,
+    gwetRaw: bucket?.value ?? null,
     bucketDate: bucket?.date ?? null,
+    soilDry: scale.dry,
+    soilWet: scale.wet,
     rain90Mm: rain90,
+    rain90NormalMm: past90.length ? mean(past90) : null,
     tmaxLatest: series.tmax[last],
     tminLatest: series.tmin[last],
     precipLatest: series.precip[last],
@@ -347,7 +478,6 @@ export function siteSnapshot(series: DailySeries, sc: Pick<Scenario, 'season' | 
     seasonFrostDays: mean(frost),
     seasonGdd: mean(gdd),
     seasonHotDays: mean(hot),
-    rain90NormalMm: past90.length ? mean(past90) : null,
     analogueYears: starts.length,
   }
 }
@@ -375,7 +505,6 @@ export function soilMoistureAnomaly(series: DailySeries, windowDays = 15): Moist
     const t = new Date(`${d}T00:00:00Z`)
     const y = t.getUTCFullYear()
     if (y >= refYear) return
-    // Same calendar date in year y, compared within ±windowDays.
     const anchor = Date.UTC(y, ref.getUTCMonth(), ref.getUTCDate())
     if (Math.abs(t.getTime() - anchor) <= windowDays * 86_400_000) {
       vals.push(v)

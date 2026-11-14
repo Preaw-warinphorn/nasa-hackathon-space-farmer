@@ -1,6 +1,16 @@
-// Australian crop matrix & agronomic parameters.
-// Economic values are indicative GRDC / ABARES-style benchmarks (AUD) carried over
-// from the original mockup — replace with current-season figures before relying on them.
+// Australian crop matrix: agronomic parameters and economics, all per HECTARE.
+//
+// Yield model inputs follow standard Australian dryland-cropping relations:
+//  • water-limited yield (French & Schultz 1984): Y = WUE × (soil water + season rain − E)
+//  • radiation-limited yield: Y = RUE × intercepted solar radiation × harvest index
+// WUE values are *attainable on-farm* figures, calibrated so the model's long-run yields at the
+// demo hubs sit close to ABARES state-average yields for 2016–2025 (see src/data/validation.ts).
+//
+// Prices: farm-gate = ABARES weekly export price (FOB port) minus a freight & handling allowance.
+// Chickpeas: ABARES quarterly delivered price (Crop Report Sept 2026, Table 17) less freight.
+// Mungbeans have no ABARES price series, so they use an indicative figure.
+// Costs: indicative variable costs (seed, fertiliser, chemicals, operations, harvest, levies) in the
+// range of recent NSW DPI / GRDC gross-margin budgets. Edit them in the app's "Prices & costs" panel.
 
 export type Season = 'winter' | 'spring'
 
@@ -13,9 +23,17 @@ export interface Crop {
   tBase: number
   /** Thermal time from sowing to harvest maturity (°C·d). */
   targetGdd: number
-  /** Seasonal crop water demand (mm). */
-  waterDemandMm: number
-  /** 0–1, how well yield holds up under water deficit. */
+  /** Attainable grain water-use efficiency (kg grain / ha / mm of water used). */
+  wueKgHaMm: number
+  /** Water lost to soil evaporation before the crop can use it (mm), the "E" in French–Schultz. */
+  evapLossMm: number
+  /** Radiation-use efficiency (g biomass / MJ intercepted). */
+  rueGPerMj: number
+  /** Share of biomass that ends up as grain. */
+  harvestIndex: number
+  /** Agronomic ceiling for a dryland crop (t/ha). */
+  maxYieldTHa: number
+  /** 0–1, how well the crop holds up under drought (used for labels). */
   droughtTolerance: number
   /** Max daily temperature above which flowering/grain fill is damaged (°C). */
   heatThresholdC: number
@@ -23,130 +41,168 @@ export interface Crop {
   heatLossPerDay: number
   /** Fractional yield loss per frost day during flowering/grain fill. */
   frostLossPerDay: number
-  /** Potential yield under no stress (t/acre). */
-  baseYieldAc: number
+  /** Optional cool-flowering limit: days during flowering with mean temperature below this (°C)
+   *  fail to set pods (chickpea needs a daily mean above ~15 °C). */
+  podSetMinMeanC?: number
+  /** Fractional yield loss per cool flowering day. */
+  coolLossPerDay?: number
+  /** Farm-gate price (A$/t). */
   priceAudPerT: number
-  costAudPerAc: number
+  priceSource: string
+  /** Variable growing cost (A$/ha). */
+  costAudPerHa: number
   /** Next-season soil nitrogen effect (kg N/ha, positive = fixed by legume). */
   nitrogenKgHa: number
   preferredSeason: Season
   description: string
 }
 
+/** Freight, receival and port charges deducted from FOB port prices to get a farm-gate price. */
+export const FREIGHT_HANDLING_AUD_PER_T = 60
+export const PRICE_DATE = '11 Nov 2026'
+/** ABARES Australian Crop Report Sept 2026, Table 17: chickpeas, domestic delivered Melbourne, 2026 Q2 average (A$/t). */
+const CHICKPEA_DEL_MELB = 728.846
+const abares = (fob: number, grade: string) => ({
+  priceAudPerT: fob - FREIGHT_HANDLING_AUD_PER_T,
+  priceSource: `ABARES ${grade} $${fob}/t FOB, ${PRICE_DATE}, less $${FREIGHT_HANDLING_AUD_PER_T}/t freight & handling`,
+})
+
 export const CROPS: Crop[] = [
   {
-    id: 'chickpea',
-    name: 'Desi Chickpeas',
-    category: 'Pulses / Legumes',
-    icon: '🌱',
-    tBase: 5,
-    targetGdd: 1450,
-    waterDemandMm: 220,
-    droughtTolerance: 0.85,
-    heatThresholdC: 32,
-    heatLossPerDay: 0.02,
-    frostLossPerDay: 0.03,
-    baseYieldAc: 1.1,
-    priceAudPerT: 950,
-    costAudPerAc: 240,
-    nitrogenKgHa: 55,
-    preferredSeason: 'winter',
-    description: 'Superior drought resilience. Fixes atmospheric nitrogen for subsequent cereals.',
-  },
-  {
-    id: 'sorghum',
-    name: 'Grain Sorghum',
-    category: 'Coarse Summer Grain',
-    icon: '🌾',
-    tBase: 10,
-    targetGdd: 1850,
-    waterDemandMm: 250,
-    droughtTolerance: 0.9,
-    heatThresholdC: 38,
-    heatLossPerDay: 0.01,
-    frostLossPerDay: 0.08,
-    baseYieldAc: 1.8,
-    priceAudPerT: 340,
-    costAudPerAc: 220,
-    nitrogenKgHa: 0,
-    preferredSeason: 'spring',
-    description: 'C4 physiology tolerates 35°C+ heat. Ideal summer rotation when subsoil moisture is deep.',
-  },
-  {
-    id: 'barley',
-    name: 'Feed/Malt Barley',
-    category: 'Winter Cereal',
-    icon: '🍺',
-    tBase: 0,
-    targetGdd: 1400,
-    waterDemandMm: 280,
-    droughtTolerance: 0.75,
-    heatThresholdC: 30,
-    heatLossPerDay: 0.015,
-    frostLossPerDay: 0.02,
-    baseYieldAc: 1.5,
-    priceAudPerT: 310,
-    costAudPerAc: 230,
-    nitrogenKgHa: -35,
-    preferredSeason: 'winter',
-    description: 'Fast-maturing winter cereal. Moderate drought tolerance and lower risk than canola.',
-  },
-  {
     id: 'wheat',
-    name: 'ASW Winter Wheat',
-    category: 'Staple Cereal',
+    name: 'ASW Wheat',
+    category: 'Staple winter cereal',
     icon: '🌾',
     tBase: 0,
-    targetGdd: 1650,
-    waterDemandMm: 360,
+    targetGdd: 1900,
+    wueKgHaMm: 15,
+    evapLossMm: 110,
+    rueGPerMj: 1.24,
+    harvestIndex: 0.4,
+    maxYieldTHa: 6,
     droughtTolerance: 0.65,
     heatThresholdC: 32,
     heatLossPerDay: 0.02,
     frostLossPerDay: 0.03,
-    baseYieldAc: 1.3,
-    priceAudPerT: 360,
-    costAudPerAc: 280,
+    ...abares(406, 'ASW wheat (Port Adelaide)'),
+    costAudPerHa: 480,
     nitrogenKgHa: -50,
     preferredSeason: 'winter',
-    description: "Australia's volume staple. Needs sustained spring rainfall during heading and grain fill.",
+    description: "Australia's volume staple. Needs stored water plus spring rain through heading and grain fill.",
+  },
+  {
+    id: 'barley',
+    name: 'Feed/Malt Barley',
+    category: 'Winter cereal',
+    icon: '🍺',
+    tBase: 0,
+    targetGdd: 1750,
+    wueKgHaMm: 16,
+    evapLossMm: 110,
+    rueGPerMj: 1.24,
+    harvestIndex: 0.42,
+    maxYieldTHa: 6.5,
+    droughtTolerance: 0.75,
+    heatThresholdC: 32,
+    heatLossPerDay: 0.015,
+    frostLossPerDay: 0.02,
+    ...abares(360, 'feed barley (Port Adelaide)'),
+    costAudPerHa: 450,
+    nitrogenKgHa: -35,
+    preferredSeason: 'winter',
+    description: 'Quicker-maturing winter cereal that copes with a dry finish a little better than wheat.',
   },
   {
     id: 'canola',
     name: 'Canola (Oilseed)',
-    category: 'Oilseeds',
+    category: 'Oilseed',
     icon: '🌼',
     tBase: 5,
-    targetGdd: 1600,
-    waterDemandMm: 420,
+    targetGdd: 1500,
+    wueKgHaMm: 9,
+    evapLossMm: 110,
+    rueGPerMj: 1.0,
+    harvestIndex: 0.28,
+    maxYieldTHa: 3.5,
     droughtTolerance: 0.4,
     heatThresholdC: 29,
     heatLossPerDay: 0.03,
     frostLossPerDay: 0.02,
-    baseYieldAc: 0.85,
-    priceAudPerT: 720,
-    costAudPerAc: 380,
+    ...abares(770, 'canola (Kwinana)'),
+    costAudPerHa: 600,
     nitrogenKgHa: -65,
     preferredSeason: 'winter',
-    description: 'High upside in wet seasons, but severe loss risk in low subsoil-moisture years.',
+    description: 'High value in good seasons, but expensive to grow and badly hurt by a dry spring.',
+  },
+  {
+    id: 'chickpea',
+    name: 'Desi Chickpeas',
+    category: 'Pulse / legume',
+    icon: '🌱',
+    tBase: 0,
+    targetGdd: 1850,
+    wueKgHaMm: 10,
+    evapLossMm: 120,
+    rueGPerMj: 1.0,
+    harvestIndex: 0.38,
+    maxYieldTHa: 3.5,
+    droughtTolerance: 0.8,
+    heatThresholdC: 32,
+    heatLossPerDay: 0.025,
+    frostLossPerDay: 0.03,
+    podSetMinMeanC: 15,
+    coolLossPerDay: 0.003,
+    priceAudPerT: Math.round(CHICKPEA_DEL_MELB - FREIGHT_HANDLING_AUD_PER_T),
+    priceSource: `ABARES Crop Report Sept 2026 (Table 17): chickpeas delivered Melbourne, Apr–Jun 2026 avg $${CHICKPEA_DEL_MELB.toFixed(0)}/t, less $${FREIGHT_HANDLING_AUD_PER_T}/t freight. Volatile with Indian import policy`,
+    costAudPerHa: 480,
+    nitrogenKgHa: 55,
+    preferredSeason: 'winter',
+    description: 'Drought-hardy pulse that fixes nitrogen for the next cereal. Price is volatile.',
+  },
+  {
+    id: 'sorghum',
+    name: 'Grain Sorghum',
+    category: 'Summer coarse grain',
+    icon: '🌾',
+    tBase: 10,
+    targetGdd: 1650,
+    wueKgHaMm: 19,
+    evapLossMm: 150,
+    rueGPerMj: 1.4,
+    harvestIndex: 0.45,
+    maxYieldTHa: 8,
+    droughtTolerance: 0.85,
+    heatThresholdC: 38,
+    heatLossPerDay: 0.01,
+    frostLossPerDay: 0.08,
+    ...abares(443, 'grain sorghum (Brisbane)'),
+    costAudPerHa: 650,
+    nitrogenKgHa: 0,
+    preferredSeason: 'spring',
+    description: 'C4 summer crop that handles heat. Best on deep clays with a full soil-water profile.',
   },
   {
     id: 'mungbean',
     name: 'Mungbeans',
-    category: 'Fast Cash Pulse',
+    category: 'Summer pulse',
     icon: '🫘',
     tBase: 10,
-    targetGdd: 1050,
-    waterDemandMm: 160,
-    droughtTolerance: 0.8,
+    targetGdd: 1100,
+    wueKgHaMm: 6,
+    evapLossMm: 150,
+    rueGPerMj: 1.0,
+    harvestIndex: 0.33,
+    maxYieldTHa: 2.5,
+    droughtTolerance: 0.7,
     heatThresholdC: 38,
     heatLossPerDay: 0.015,
     frostLossPerDay: 0.08,
-    baseYieldAc: 0.65,
-    priceAudPerT: 1050,
-    costAudPerAc: 200,
+    priceAudPerT: 900,
+    priceSource: 'Indicative farm-gate price (no public price feed)',
+    costAudPerHa: 450,
     nitrogenKgHa: 35,
     preferredSeason: 'spring',
-    description: 'Fast-turnaround opportunity crop to capture summer rainfall events.',
+    description: 'Short-season summer pulse that can catch summer rain, but yields are erratic.',
   },
 ]
 

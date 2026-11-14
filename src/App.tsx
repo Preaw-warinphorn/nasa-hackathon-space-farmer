@@ -1,22 +1,31 @@
 import { Database, FlaskConical, LoaderCircle, Printer, RefreshCw, Tractor, TriangleAlert } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
+import { EconomicsPanel } from './components/EconomicsPanel'
+import type { Economics } from './components/EconomicsPanel'
 import { NasaDataPage } from './components/NasaDataPage'
+import { ValidationChart } from './components/ValidationChart'
+import type { AreaUnit } from './components/units'
+import { fmtArea, fmtPerArea, fmtYield } from './components/units'
 import { FarmerReadinessPanel } from './components/FarmerReadinessPanel'
 import { DeepDive, Leaderboard, WinnerBanner } from './components/Results'
 import { LocationPanel } from './components/LocationPanel'
 import { TelemetryPanel } from './components/TelemetryPanel'
 import { aud, isoToDate, longDate } from './components/format'
-import { CROPS } from './data/crops'
+import { CROPS, PRICE_DATE } from './data/crops'
 import type { Season } from './data/crops'
 import { DEFAULT_PAWC_MM, HUBS } from './data/hubs'
 import type { Hub } from './data/hubs'
 import type { PreviousCrop } from './data/rotation'
 import { PREVIOUS_CROPS } from './data/rotation'
-import { rankCrops, siteSnapshot } from './engine/model'
+import { ABARES_URL, grainState } from './data/validation'
+import { defaultSeason, evaluateCrop, rankCrops, siteSnapshot, SOWING_WINDOWS } from './engine/model'
 import { usePowerData } from './nasa/usePowerData'
 
 const LOGO_MARK = `${import.meta.env.BASE_URL}logo-mark.png`
 const LOGO_FULL = `${import.meta.env.BASE_URL}logo-full.png`
+
+/** A 1 January "today" puts sowing on the nominal date (15 May / 15 Oct), as in the calibration. */
+const VALIDATION_TODAY = new Date(new Date().getFullYear() + 1, 0, 1)
 
 type Mode = 'farmer' | 'scientist'
 type Page = 'home' | 'nasa-data'
@@ -41,8 +50,10 @@ export default function App() {
   const [hub, setHub] = useState<Hub | null>(HUBS[0])
   const [coords, setCoords] = useState({ lat: HUBS[0].lat, lon: HUBS[0].lon })
   const [customName, setCustomName] = useState<string | null>(null)
-  const [acres, setAcres] = useState(500)
-  const [season, setSeason] = useState<Season>('winter')
+  const [areaHa, setAreaHa] = useState(200)
+  const [unit, setUnit] = useState<AreaUnit>('ha')
+  const [season, setSeason] = useState<Season>(() => defaultSeason())
+  const [economics, setEconomics] = useState<Economics>({})
   const [rainAnomalyPct, setRain] = useState(0)
   const [tempAnomalyC, setTemp] = useState(0)
   const [pawcMm, setPawc] = useState(HUBS[0].pawcMm)
@@ -57,17 +68,30 @@ export default function App() {
 
   const analysis = useMemo(() => {
     if (!series) return null
-    const scenario = { season, acres, rainAnomalyPct, tempAnomalyC, pawcMm, irrigationMm, previousCrop }
+    const scenario = { season, areaHa, rainAnomalyPct, tempAnomalyC, pawcMm, irrigationMm, previousCrop, economics }
     const snap = siteSnapshot(series, scenario)
-    const ranked = rankCrops(series, CROPS, scenario, snap.bucketFraction ?? 0.3)
-    return { snap, ranked }
-  }, [series, season, acres, rainAnomalyPct, tempAnomalyC, pawcMm, irrigationMm, previousCrop])
+    const ranked = rankCrops(series, CROPS, scenario)
+    // Best crop in the other sowing window, offered when nothing pays in this one.
+    const otherSeason: Season = season === 'winter' ? 'spring' : 'winter'
+    const otherBest = ranked[0].netProfit < 0 ? rankCrops(series, CROPS, { ...scenario, season: otherSeason })[0] : null
+    return { snap, ranked, otherSeason, otherBest }
+  }, [series, season, areaHa, rainAnomalyPct, tempAnomalyC, pawcMm, irrigationMm, previousCrop, economics])
 
   const placeName = hub ? hub.name : (customName ?? `Paddock ${coords.lat.toFixed(2)}°, ${coords.lon.toFixed(2)}°`)
   const scientist = mode === 'scientist'
   const winner = analysis?.ranked[0]
   const active = analysis ? (analysis.ranked.find((r) => r.crop.id === activeId) ?? winner!) : null
   const bucketPct = analysis?.snap.bucketFraction != null ? Math.round(analysis.snap.bucketFraction * 100) : null
+  const abaresState = grainState(coords.lat, coords.lon)
+
+  // Model-vs-reality replay for the selected crop: pure history (each year's own soil water,
+  // nominal sowing date, no what-if settings), so it can be compared with ABARES yields.
+  const activeCrop = active?.crop
+  const validationYears = useMemo(() => {
+    if (!series || !activeCrop) return []
+    const sc = { season: activeCrop.preferredSeason, areaHa: 1, rainAnomalyPct: 0, tempAnomalyC: 0, pawcMm }
+    return evaluateCrop(series, activeCrop, sc, { today: VALIDATION_TODAY, startWater: 'each-year' }).years
+  }, [series, activeCrop, pawcMm])
 
   const chooseHub = (h: Hub) => {
     setHub(h)
@@ -109,6 +133,18 @@ export default function App() {
             </a>
             {page === 'home' && (
             <>
+            <div className="flex items-center rounded-lg border border-space-700 bg-space-900 p-1 text-xs" role="group" aria-label="Area units">
+              {(['ha', 'ac'] as const).map((u) => (
+                <button
+                  key={u}
+                  onClick={() => setUnit(u)}
+                  aria-pressed={unit === u}
+                  className={`rounded-md px-2.5 py-1.5 font-mono font-semibold transition-all ${unit === u ? 'bg-space-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                >
+                  {u}
+                </button>
+              ))}
+            </div>
             <div className="flex items-center rounded-lg border border-space-700 bg-space-900 p-1 text-xs">
               <button
                 onClick={() => setMode('farmer')}
@@ -128,7 +164,7 @@ export default function App() {
               disabled={!analysis}
               className="hidden items-center gap-2 rounded-lg border border-space-600 bg-space-700 px-3 py-1.5 text-xs font-medium transition hover:bg-space-600 disabled:opacity-50 md:flex"
             >
-              <Printer className="size-3.5" /> Export Prospectus
+              <Printer className="size-3.5" /> Print crop plan
             </button>
             </>
             )}
@@ -159,7 +195,8 @@ export default function App() {
           lat={coords.lat}
           lon={coords.lon}
           hubId={hub?.id ?? null}
-          acres={acres}
+          areaHa={areaHa}
+          unit={unit}
           season={season}
           rainAnomalyPct={rainAnomalyPct}
           tempAnomalyC={tempAnomalyC}
@@ -168,7 +205,7 @@ export default function App() {
           previousCrop={previousCrop}
           onHub={chooseHub}
           onPick={pickPoint}
-          onAcres={setAcres}
+          onAreaHa={setAreaHa}
           onSeason={setSeason}
           onRain={setRain}
           onTemp={setTemp}
@@ -185,14 +222,30 @@ export default function App() {
         {!analysis && <LoadingCard state={state} onRetry={retry} />}
         {analysis && series && winner && active && (
           <div className={`space-y-6 transition-opacity ${state.status === 'loading' ? 'opacity-50' : ''}`}>
-            <WinnerBanner winner={winner} placeName={placeName} bucketPct={bucketPct} />
+            <WinnerBanner
+              winner={winner}
+              placeName={placeName}
+              areaHa={areaHa}
+              unit={unit}
+              other={
+                analysis.otherBest
+                  ? {
+                      label: SOWING_WINDOWS[analysis.otherSeason].label,
+                      sowDate: analysis.otherBest.sowDate,
+                      best: analysis.otherBest,
+                      onSwitch: () => setSeason(analysis.otherSeason),
+                    }
+                  : null
+              }
+            />
             <Leaderboard
               results={analysis.ranked}
               activeId={active.crop.id}
               onSelect={setActiveId}
               scientist={scientist}
               placeName={placeName}
-              acres={acres}
+              areaHa={areaHa}
+              unit={unit}
               rainAnomalyPct={rainAnomalyPct}
               tempAnomalyC={tempAnomalyC}
             />
@@ -202,8 +255,11 @@ export default function App() {
               ) : (
                 <FarmerReadinessPanel snap={analysis.snap} season={season} />
               )}
-              <DeepDive r={active} acres={acres} scientist={scientist} />
+              <DeepDive r={active} areaHa={areaHa} unit={unit} scientist={scientist}>
+                <ValidationChart cropName={active.crop.name} cropId={active.crop.id} state={abaresState} years={validationYears} unit={unit} />
+              </DeepDive>
             </div>
+            <EconomicsPanel crops={CROPS} economics={economics} unit={unit} onChange={setEconomics} />
           </div>
         )}
       </main>
@@ -213,7 +269,7 @@ export default function App() {
           <div className="mb-4 flex items-center justify-between gap-4 border-b-2 border-black pb-4">
             <img src={LOGO_FULL} alt="AcreCast AU" className="h-20 w-auto" />
             <div className="flex-1">
-              <h1 className="text-2xl font-bold">AcreCast AU — Farm Climate Investment Prospectus</h1>
+              <h1 className="text-2xl font-bold">AcreCast AU — Crop Plan</h1>
               <p className="text-sm text-gray-600">NASA Space Apps Challenge 2026 | Adapting Farms with NASA Data</p>
             </div>
             <div className="text-right text-xs">
@@ -225,15 +281,15 @@ export default function App() {
           <div className="space-y-2 rounded border p-4 text-sm">
             <h2 className="text-lg font-bold">Selected crop: {active.crop.name}</h2>
             <p>
-              <strong>Paddock size:</strong> {acres.toLocaleString()} acres · <strong>Sowing:</strong> {longDate(active.sowDate)} · <strong>Est. harvest:</strong>{' '}
+              <strong>Paddock size:</strong> {fmtArea(areaHa, unit)} · <strong>Sowing:</strong> {longDate(active.sowDate)} · <strong>Est. harvest:</strong>{' '}
               {active.harvestDate ? `${longDate(active.harvestDate)} (${active.daysToHarvest} days)` : 'does not mature'}
             </p>
             <p>
-              <strong>Expected net profit:</strong> {aud(active.netProfit, true)} AUD ({active.roiPct}% ROI) · <strong>Loss risk:</strong>{' '}
+              <strong>Expected gross margin:</strong> {aud(active.netProfit, true)} AUD ({fmtPerArea(active.netProfit / areaHa, unit, true)}, {active.roiPct}% return on growing costs) · <strong>Loss risk:</strong>{' '}
               {Math.round(active.lossProbability * 100)}% of {active.years.length} past seasons · <strong>Worst season:</strong> {aud(active.worstProfit, true)}
             </p>
             <p>
-              <strong>Scenario:</strong> rainfall {rainAnomalyPct}% · temperature +{tempAnomalyC}°C · subsoil bucket {bucketPct}% of {pawcMm} mm PAWC · irrigation{' '}
+              <strong>Scenario:</strong> rainfall {rainAnomalyPct}% · temperature +{tempAnomalyC}°C · plant-available soil water today {bucketPct}% of {pawcMm} mm PAWC · irrigation{' '}
               {irrigationMm} mm · previous crop: {previousCrop === 'none' ? 'none' : PREVIOUS_CROPS.find((c) => c.id === previousCrop)?.label}
             </p>
           </div>
@@ -243,8 +299,8 @@ export default function App() {
                 <th>Rank</th>
                 <th>Crop</th>
                 <th>Days</th>
-                <th>Yield t/ac</th>
-                <th>Net profit</th>
+                <th>Yield</th>
+                <th>Gross margin</th>
                 <th>Loss risk</th>
                 <th>Score</th>
               </tr>
@@ -255,7 +311,7 @@ export default function App() {
                   <td>{i + 1}</td>
                   <td>{r.crop.name}</td>
                   <td>{r.daysToHarvest ?? '—'}</td>
-                  <td>{r.yieldAc.toFixed(2)}</td>
+                  <td>{fmtYield(r.yieldTHa, unit)}</td>
                   <td>{aud(r.netProfit, true)}</td>
                   <td>{Math.round(r.lossProbability * 100)}%</td>
                   <td>{r.score}</td>
@@ -264,7 +320,8 @@ export default function App() {
             </tbody>
           </table>
           <p className="mt-4 text-xs text-gray-600">
-            Based on NASA POWER daily agroclimatology (T2M_MAX, T2M_MIN, PRECTOTCORR, GWETROOT, ALLSKY_SFC_SW_DWN). Economics are indicative benchmarks, not financial advice.
+            Based on NASA POWER daily agroclimatology (T2M_MAX, T2M_MIN, PRECTOTCORR, GWETROOT, ALLSKY_SFC_SW_DWN). Yield model calibrated against ABARES state yields 2014–2025.
+            Prices: ABARES export prices ({PRICE_DATE}) less freight; chickpeas from ABARES quarterly prices; mungbean price and growing costs are indicative. Indicative planning tool, not financial advice.
           </p>
         </div>
       )}
@@ -275,7 +332,7 @@ export default function App() {
       <footer className="no-print border-t border-space-800 py-6 text-center text-xs text-slate-400">
         <p>AcreCast AU — Built for NASA Space Apps Challenge 2026 (Field Shift: Adapting Farms with NASA Data).</p>
         <p className="mt-1">
-          Data: <a className="underline hover:text-white" href="https://power.larc.nasa.gov/" target="_blank" rel="noreferrer">NASA POWER</a> Agroclimatology API (<a className="underline hover:text-white" href="#/nasa-data">how we use it</a>). Crop economics are indicative GRDC/ABARES-style benchmarks — not financial advice.
+          Data: <a className="underline hover:text-white" href="https://power.larc.nasa.gov/" target="_blank" rel="noreferrer">NASA POWER</a> Agroclimatology API (<a className="underline hover:text-white" href="#/nasa-data">how we use it</a>). Yields checked against <a className="underline hover:text-white" href={ABARES_URL} target="_blank" rel="noreferrer">ABARES</a> crop data; grain prices from ABARES ({PRICE_DATE}). Indicative planning tool — not financial advice.
         </p>
       </footer>
     </div>

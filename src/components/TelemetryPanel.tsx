@@ -27,12 +27,13 @@ export function TelemetryPanel({ snap, series, scientist, season }: { snap: Site
         </div>
         <div className="flex-1">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-bold text-slate-200">Subsoil Water Bucket</span>
+            <span className="text-xs font-bold text-slate-200">Plant-available soil water</span>
             <span className={`text-[11px] font-semibold ${status.cls}`}>{status.text}</span>
           </div>
           <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
-            NASA POWER <strong className="text-cyan-300">GWETROOT</strong> root-zone wetness
-            {snap.bucketDate ? ` as of ${snap.bucketDate}` : ''}. This is the stored water the next crop starts from.
+            NASA POWER <strong className="text-cyan-300">GWETROOT</strong> {snap.gwetRaw?.toFixed(2) ?? 'n/a'}
+            {snap.bucketDate ? ` on ${snap.bucketDate}` : ''}, rescaled between this site’s dry end ({snap.soilDry.toFixed(2)} ≈ wilting point) and wet end (
+            {snap.soilWet.toFixed(2)} ≈ field capacity).
           </p>
         </div>
       </div>
@@ -54,14 +55,15 @@ export function TelemetryPanel({ snap, series, scientist, season }: { snap: Site
             T2M_MAX: {snap.tmaxLatest.toFixed(1)}°C | T2M_MIN: {snap.tminLatest.toFixed(1)}°C | PRECTOTCORR: {snap.precipLatest.toFixed(1)} mm/d
           </p>
           <p>
-            GWETROOT: {snap.bucketFraction?.toFixed(2) ?? 'n/a'} | ALLSKY_SFC_SW_DWN: {snap.solarLatest?.toFixed(1) ?? 'n/a'} MJ/m²/d
+            GWETROOT: {snap.gwetRaw?.toFixed(2) ?? 'n/a'} (plant-available {pct ?? '–'}%) | ALLSKY_SFC_SW_DWN: {snap.solarLatest?.toFixed(1) ?? 'n/a'} MJ/m²/d
           </p>
           <p className="text-[10px] text-slate-400">
             Record: {series.dates[0]} → {series.dates.at(-1)} ({series.dates.length.toLocaleString()} days, {HISTORY_YEARS} yr) · Elevation{' '}
             {series.elevationM?.toFixed(0) ?? '?'} m · Analogue seasons: {snap.analogueYears}
           </p>
           <p className="text-[10px] text-slate-400">
-            Model: GDD = max(0, (Tmax+Tmin)/2 − Tbase), crop-specific Tbase · frost = Tmin &lt; {FROST_THRESHOLD_C}°C · params {POWER_PARAMS.join(', ')}
+            Model: GDD = max(0, (Tmax+Tmin)/2 − Tbase) · frost = Tmin &lt; {FROST_THRESHOLD_C}°C · yield = min(WUE × (soil + rain − E), solar × RUE × HI) · params{' '}
+            {POWER_PARAMS.join(', ')}
           </p>
           <a href={series.requestUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[10px] text-cyan-400 hover:underline">
             Raw API request <ExternalLink className="size-3" />

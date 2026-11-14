@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { dedupePoints, polygonAreaAcres, polygonCenter } from './geo'
+import { dedupePoints, polygonAreaAcres, polygonAreaHa, polygonCenter } from './geo'
 
 describe('paddock geometry', () => {
   it('measures a ~1 km square near Moree as ~247 acres', () => {
@@ -14,6 +14,7 @@ describe('paddock geometry', () => {
     ]
     expect(polygonAreaAcres(sq)).toBeGreaterThan(245)
     expect(polygonAreaAcres(sq)).toBeLessThan(249)
+    expect(polygonAreaHa(sq)).toBeCloseTo(polygonAreaAcres(sq) * 0.404686, 3)
     expect(polygonCenter(sq)[0]).toBeCloseTo(lat + dLat / 2, 9)
   })
 
