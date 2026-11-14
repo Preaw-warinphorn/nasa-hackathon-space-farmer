@@ -271,3 +271,17 @@ describe('site snapshot', () => {
     expect(snap.seasonHotDays).toBe(150)
   })
 })
+
+describe('regional suitability', () => {
+  it('ranks dryland summer crops last outside the northern summer-rainfall zone', () => {
+    const south = { ...makeSeries({ from: '2015-01-01', days: 365 * 6, tmax: 26, tmin: 14, precip: 3, gwet: 0.5 }), lat: -36.7, lon: 142.2 }
+    const north = { ...south, lat: -29.5, lon: 149.8 }
+    const sc = { ...baseScenario, season: 'spring' as const }
+    const s = rankCrops(south, CROPS, sc, { today: JAN })
+    expect(s.filter((r) => r.crop.summerRainfallZoneOnly).every((r) => r.notSuited && r.notRecommended)).toBe(true)
+    expect(s.slice(-2).every((r) => r.crop.summerRainfallZoneOnly)).toBe(false) // winter crops are off-season here too
+    const n = rankCrops(north, CROPS, sc, { today: JAN })
+    expect(n.filter((r) => r.crop.summerRainfallZoneOnly).every((r) => !r.notSuited && !r.notRecommended)).toBe(true)
+    expect(n[0].crop.summerRainfallZoneOnly).toBe(true)
+  })
+})

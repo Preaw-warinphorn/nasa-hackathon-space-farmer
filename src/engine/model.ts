@@ -14,6 +14,7 @@
 // The spread of outcomes across years gives an expected return *and* a downside risk.
 
 import type { Crop, Season } from '../data/crops'
+import { isRegionallySuited } from '../data/crops'
 import type { PreviousCrop, RotationEffect } from '../data/rotation'
 import { IRRIGATION_AUD_PER_MM_HA, rotationEffect } from '../data/rotation'
 import type { DailySeries } from '../nasa/power'
@@ -112,6 +113,10 @@ export interface CropResult {
   irrigationCost: number
   rotation: RotationEffect
   offSeason: boolean
+  /** Not grown commercially in this region (e.g. dryland summer crops in the south). */
+  notSuited: boolean
+  /** Off-season or not suited: listed after every recommended crop. */
+  notRecommended: boolean
   score: number
 }
 
@@ -364,6 +369,7 @@ export function evaluateCrop(series: DailySeries, crop: Crop, sc: Scenario, opts
   const lossProbability = years.length ? years.filter((y) => y.profit < 0).length / years.length : 1
   const worstProfit = years.length ? Math.min(...years.map((y) => y.profit)) : -costs
   const offSeason = crop.preferredSeason !== sc.season
+  const notSuited = !isRegionallySuited(crop, series.lat, series.lon)
 
   // Risk-adjusted score (0–100): expected ROI (saturating) minus how often the crop lost money
   // across past seasons. A legume's nitrogen benefit belongs to *next* season's crop, so it is
@@ -371,6 +377,7 @@ export function evaluateCrop(series: DailySeries, crop: Crop, sc: Scenario, opts
   let score = 45 + 35 * Math.tanh(roiPct / 80) - 40 * lossProbability
   score += rotation.scoreBonus
   if (offSeason) score -= 20
+  if (notSuited) score -= 20
   if (!matured.length) score = 5
   score = Math.max(1, Math.min(99, Math.round(score)))
 
@@ -405,6 +412,8 @@ export function evaluateCrop(series: DailySeries, crop: Crop, sc: Scenario, opts
     irrigationCost: irrigationPerHa * sc.areaHa,
     rotation,
     offSeason,
+    notSuited,
+    notRecommended: offSeason || notSuited,
     score,
   }
 }
@@ -412,8 +421,8 @@ export function evaluateCrop(series: DailySeries, crop: Crop, sc: Scenario, opts
 export function rankCrops(series: DailySeries, crops: Crop[], sc: Scenario, opts: EvalOptions = {}): CropResult[] {
   return crops
     .map((c) => evaluateCrop(series, c, sc, opts))
-    // Off-season crops always rank below every in-season crop, whatever their economics.
-    .sort((a, b) => Number(a.offSeason) - Number(b.offSeason) || b.score - a.score || b.netProfit - a.netProfit)
+    // Off-season and regionally unsuited crops always rank below every recommended crop, whatever their economics.
+    .sort((a, b) => Number(a.notRecommended) - Number(b.notRecommended) || b.score - a.score || b.netProfit - a.netProfit)
 }
 
 export function siteSnapshot(series: DailySeries, sc: Pick<Scenario, 'season' | 'tempAnomalyC'>, today = new Date()): SiteSnapshot {

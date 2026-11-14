@@ -50,7 +50,7 @@ export function WinnerBanner({ winner, placeName, other, areaHa, unit }: { winne
 
 /** Shown when even the best in-season crop is expected to lose money: say so plainly. */
 function NoProfitBanner({ winner, placeName, other, areaHa, unit }: { winner: CropResult; placeName: string; other: OtherWindow | null; areaHa: number; unit: AreaUnit }) {
-  const otherPays = other && other.best.netProfit > 0 && !other.best.offSeason
+  const otherPays = other && other.best.netProfit > 0 && !other.best.notRecommended
   return (
     <section className="rounded-2xl border-2 border-amber-500/50 bg-gradient-to-r from-amber-950/60 via-space-800 to-space-800 p-5 shadow-2xl">
       <div className="mb-1 flex flex-wrap items-center gap-2">
@@ -153,12 +153,12 @@ export function Leaderboard({
           const selected = r.crop.id === activeId
           const badge =
             r.score < 40 ? 'bg-rose-500/20 text-rose-300 border-rose-500/40' : r.score < 65 ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-          const firstOffSeason = r.offSeason && (idx === 0 || !results[idx - 1].offSeason)
+          const firstOffSeason = r.notRecommended && (idx === 0 || !results[idx - 1].notRecommended)
           return (
             <div key={r.crop.id}>
             {firstOffSeason && (
               <p className="mb-3 mt-1 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                <span className="h-px flex-1 bg-space-600" /> Off-season for this sowing window — not recommended <span className="h-px flex-1 bg-space-600" />
+                <span className="h-px flex-1 bg-space-600" /> Not recommended: off-season or not grown in this region <span className="h-px flex-1 bg-space-600" />
               </p>
             )}
             <button
@@ -174,6 +174,11 @@ export function Leaderboard({
                     <h4 className="text-sm font-bold text-white">{r.crop.name}</h4>
                     {idx === 0 && <span className="rounded bg-amber-400 px-1.5 py-0.5 text-[10px] font-bold text-space-900">#1 PICK</span>}
                     <span className={`rounded border px-2 py-0.5 font-mono text-[10px] font-bold ${badge}`}>{r.score} pts</span>
+                    {r.notSuited && (
+                      <span className="rounded border border-slate-600 px-1.5 py-0.5 text-[10px] text-slate-400" title="Dryland sorghum and mungbeans are grown in the summer-rainfall zone north of ~33°S">
+                        not grown here
+                      </span>
+                    )}
                     {r.offSeason && <span className="rounded border border-slate-600 px-1.5 py-0.5 text-[10px] text-slate-400">off-season</span>}
                   </div>
                   <div className="mt-0.5 flex flex-wrap items-center gap-3 font-mono text-[11px] text-slate-400">

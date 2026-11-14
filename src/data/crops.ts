@@ -54,7 +54,19 @@ export interface Crop {
   /** Next-season soil nitrogen effect (kg N/ha, positive = fixed by legume). */
   nitrogenKgHa: number
   preferredSeason: Season
+  /** Dryland crop only grown commercially in eastern Australia's summer-rainfall zone. */
+  summerRainfallZoneOnly?: boolean
   description: string
+}
+
+/** Northern grains region with reliable summer rain: eastern Australia north of ~33°S
+ *  (central-west/northern NSW and Queensland). Dryland sorghum and mungbeans are grown here. */
+export const SUMMER_ZONE_SOUTH_LIMIT_LAT = -33
+export const SUMMER_ZONE_WEST_LIMIT_LON = 138
+
+export function isRegionallySuited(crop: Crop, lat: number, lon: number): boolean {
+  if (!crop.summerRainfallZoneOnly) return true
+  return lat > SUMMER_ZONE_SOUTH_LIMIT_LAT && lon > SUMMER_ZONE_WEST_LIMIT_LON
 }
 
 /** Freight, receival and port charges deducted from FOB port prices to get a farm-gate price. */
@@ -179,6 +191,7 @@ export const CROPS: Crop[] = [
     costAudPerHa: 650,
     nitrogenKgHa: 0,
     preferredSeason: 'spring',
+    summerRainfallZoneOnly: true,
     description: 'C4 summer crop that handles heat. Best on deep clays with a full soil-water profile.',
   },
   {
@@ -202,6 +215,7 @@ export const CROPS: Crop[] = [
     costAudPerHa: 450,
     nitrogenKgHa: 35,
     preferredSeason: 'spring',
+    summerRainfallZoneOnly: true,
     description: 'Short-season summer pulse that can catch summer rain, but yields are erratic.',
   },
 ]
