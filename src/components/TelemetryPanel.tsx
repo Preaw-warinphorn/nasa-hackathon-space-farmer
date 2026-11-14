@@ -34,6 +34,12 @@ export function TelemetryPanel({ snap, series, scientist, season }: { snap: Site
             NASA POWER <strong className="text-cyan-300">GWETROOT</strong> {snap.gwetRaw?.toFixed(2) ?? 'n/a'}
             {snap.bucketDate ? ` on ${snap.bucketDate}` : ''}, rescaled between this site’s dry end ({snap.soilDry.toFixed(2)} ≈ wilting point) and wet end (
             {snap.soilWet.toFixed(2)} ≈ field capacity).
+            {series.gwetAdjustment && (
+              <span className="mt-1 block text-amber-300/90">
+                NASA POWER switched GWETROOT to its near-real-time source on {series.gwetAdjustment.fromDate}, which reads drier than the long-term record (an overnight
+                drop no real soil makes). Readings from that day on are shifted +{series.gwetAdjustment.offset.toFixed(2)} to match.
+              </span>
+            )}
           </p>
         </div>
       </div>

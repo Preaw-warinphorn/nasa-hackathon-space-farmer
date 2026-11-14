@@ -5,7 +5,7 @@ import { IRRIGATION_AUD_PER_MM_HA } from '../data/rotation'
 import { ABARES_SOURCE, ABARES_URL, BACKTEST } from '../data/validation'
 import { ABARES_FACTOR_MAX, ABARES_FACTOR_MIN, ESTABLISH_DAYS, FALLOW_DAYS, FALLOW_EFFICIENCY, FLOWERING_END, FLOWERING_START, FROST_THRESHOLD_C, KILLING_FROST_C, MAX_SEASON_DAYS, MEAN_INTERCEPTION, SOIL_DRY_PCTL, SCORE_LOSS_PENALTY, SOIL_WET_PCTL, STARTING_WATER_NOW_DAYS, soilMoistureAnomaly } from '../engine/model'
 import type { DailySeries } from '../nasa/power'
-import { CACHE_TTL_MS, HISTORY_YEARS, buildPowerUrl } from '../nasa/power'
+import { CACHE_TTL_MS, GWET_SPLICE_DROP, HISTORY_YEARS, buildPowerUrl } from '../nasa/power'
 
 interface Props {
   series: DailySeries | null
@@ -457,8 +457,10 @@ export function NasaDataPage({ series, placeName, lat, lon }: Props) {
           </li>
           <li>
             <strong className="text-white">Soil wetness is modelled.</strong> <code className="font-mono">GWETROOT</code> comes from the MERRA-2 land model, not a direct
-            measurement, and our wilting-point rescaling uses the site’s own record rather than a paddock soil test. NASA SMAP satellite soil moisture would be a natural
-            next upgrade.
+            measurement, and our wilting-point rescaling uses the site’s own record rather than a paddock soil test. For the most recent weeks POWER switches to a
+            near-real-time model (GEOS-IT) that reads drier; on 1 Oct 2026 every demo hub dropped 0.03–0.18 overnight. We detect that step (a one-day fall bigger
+            than {GWET_SPLICE_DROP}, which real drying never makes) and shift the recent readings back onto the long-term scale. NASA SMAP satellite soil moisture
+            would be a natural next upgrade.
           </li>
           <li>
             <strong className="text-white">Checked against states, not districts.</strong> ABARES publishes yields by state, so the “Model vs reality” check compares one

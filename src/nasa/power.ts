@@ -25,6 +25,33 @@ export interface DailySeries {
   apiVersion?: string
   /** Official long names and units per parameter, as returned by the API. */
   paramInfo?: Record<string, { longname: string; units: string }>
+  /** Set when recent GWETROOT was shifted to undo a data-source splice (see spliceGwet). */
+  gwetAdjustment?: { fromDate: string; offset: number }
+}
+
+/** A one-day GWETROOT fall larger than this can't be drying: in 10 years at the demo hubs, natural
+ *  day-to-day falls never exceed 0.02 (soil wets fast after rain but dries slowly). */
+export const GWET_SPLICE_DROP = 0.025
+/** Only look for a splice this many days back: POWER serves its most recent months from a near-real-time
+ *  model (GEOS-IT) and the long record from MERRA-2, and the two sit at different wetness levels. */
+export const GWET_SPLICE_LOOKBACK_DAYS = 365
+
+/** Undo the step where POWER's GWETROOT switches from MERRA-2 to its near-real-time source. Finds the most
+ *  recent implausible one-day fall within the lookback window and shifts every value from that day on by
+ *  the size of the fall, so today's reading is on the same scale as the site's long-term record. */
+export function spliceGwet(series: DailySeries): DailySeries {
+  const g = series.gwet
+  const n = g.length
+  let prev = -1
+  let found: { idx: number; offset: number } | null = null
+  for (let i = Math.max(0, n - GWET_SPLICE_LOOKBACK_DAYS - 1); i < n; i++) {
+    if (Number.isNaN(g[i])) continue
+    if (prev >= 0 && i - prev <= 3 && g[prev] - g[i] > GWET_SPLICE_DROP) found = { idx: i, offset: g[prev] - g[i] }
+    prev = i
+  }
+  if (!found) return series
+  const gwet = g.map((v, i) => (i >= found.idx && !Number.isNaN(v) ? Math.min(1, v + found.offset) : v))
+  return { ...series, gwet, gwetAdjustment: { fromDate: series.dates[found.idx], offset: found.offset } }
 }
 
 export type DataSource = 'live' | 'cache' | 'stale-cache'
@@ -34,7 +61,7 @@ export interface PowerResult {
   source: DataSource
 }
 
-const CACHE_PREFIX = 'acrecast:power:v2:'
+const CACHE_PREFIX = 'acrecast:power:v3:'
 export const CACHE_TTL_MS = 12 * 60 * 60 * 1000
 
 function ymd(d: Date): string {
@@ -112,7 +139,7 @@ export function parsePowerJson(json: PowerJson, lat: number, lon: number, reques
     series.solar.push(clean(p.ALLSKY_SFC_SW_DWN?.[k]))
   }
   if (series.dates.length < 400) throw new Error('NASA POWER returned too little data for this location')
-  return series
+  return spliceGwet(series)
 }
 
 function cacheKey(lat: number, lon: number) {
