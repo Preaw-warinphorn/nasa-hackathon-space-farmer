@@ -195,15 +195,24 @@ export function DeepDive({ r, acres, scientist }: { r: CropResult; acres: number
         </div>
 
         {ph ? (
-          <div className="flex h-4 w-full overflow-hidden rounded-full border border-space-700 bg-space-800 text-[9px] font-bold">
-            <div className="flex items-center justify-center bg-emerald-600 text-white" style={{ width: `${(ph.vegetative / total) * 100}%` }}>
-              Vegetative {ph.vegetative}d
+          <div className="space-y-1.5">
+            <div className="flex h-3 w-full overflow-hidden rounded-full border border-space-700 bg-space-800" aria-hidden>
+              <div className="bg-emerald-600" style={{ width: `${(ph.vegetative / total) * 100}%` }} />
+              <div className="bg-cyan-600" style={{ width: `${(ph.flowering / total) * 100}%` }} />
+              <div className="bg-amber-500" style={{ width: `${(ph.ripening / total) * 100}%` }} />
             </div>
-            <div className="flex items-center justify-center bg-cyan-600 text-white" style={{ width: `${(ph.flowering / total) * 100}%` }}>
-              Flowering {ph.flowering}d
-            </div>
-            <div className="flex items-center justify-center bg-amber-500 text-space-900" style={{ width: `${(ph.ripening / total) * 100}%` }}>
-              Ripening {ph.ripening}d
+            {/* Labels live outside the bar: short phases (often ripening) are too narrow to hold text. */}
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-300">
+              {[
+                ['bg-emerald-600', 'Vegetative', ph.vegetative],
+                ['bg-cyan-600', 'Flowering', ph.flowering],
+                ['bg-amber-500', 'Ripening', ph.ripening],
+              ].map(([cls, label, days]) => (
+                <span key={label} className="flex items-center gap-1.5">
+                  <span className={`size-2.5 rounded-sm ${cls}`} />
+                  {label} <strong className="font-mono text-white">{days}d</strong>
+                </span>
+              ))}
             </div>
           </div>
         ) : (
