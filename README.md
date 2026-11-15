@@ -48,6 +48,15 @@ npm run build      # static site in dist/
 npm run preview    # serves dist/ on 127.0.0.1:4173
 ```
 
+## Deploy
+
+Every push to `main` runs `.github/workflows/deploy.yml`: install, test, build, and publish `dist/` to GitHub Pages at
+<https://preaw-warinphorn.github.io/nasa-hackathon-space-farmer/>. One-time setup by a repo admin:
+**Settings → Pages → Build and deployment → Source: GitHub Actions**.
+
+The build is served from `/` by default; the workflow sets `BASE_PATH=/<repo>/` for Pages. The app is fully static (the
+browser calls NASA POWER directly), so `dist/` can be hosted anywhere.
+
 ## Layout
 
 | Path | What |
