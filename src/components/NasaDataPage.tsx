@@ -716,7 +716,7 @@ const FLOW: { icon: ReactNode; title: string; body: ReactNode; detail: string }[
       <>
         Each crop gets a score from its <strong>average margin per hectare</strong> across all those seasons, minus a small penalty for <strong>how often it lost
         money</strong>. Checked against real ABARES yields for {BACKTEST.period}, this picked the best-paying crop in {BACKTEST.bestCropHits} of {BACKTEST.seasons}{' '}
-        seasons. Crops that are out of season, or not grown in your region, go to the bottom. If nothing
+        seasons. Crops that are out of season go to the bottom, and crops not grown in your region are listed without a forecast. If nothing
         is expected to make money, the app says so and suggests the other sowing window.
       </>
     ),

@@ -70,11 +70,14 @@ export default function App() {
     if (!series) return null
     const scenario = { season, areaHa, rainAnomalyPct, tempAnomalyC, pawcMm, irrigationMm, previousCrop, economics }
     const snap = siteSnapshot(series, scenario)
-    const ranked = rankCrops(series, CROPS, scenario)
+    // Crops not grown commercially in this region are left out of every list, not just ranked last.
+    const all = rankCrops(series, CROPS, scenario)
+    const ranked = all.filter((r) => !r.notSuited)
+    const unsuited = all.filter((r) => r.notSuited).map((r) => r.crop)
     // Best crop in the other sowing window, offered when nothing pays in this one.
     const otherSeason: Season = season === 'winter' ? 'spring' : 'winter'
-    const otherBest = ranked[0].netProfit < 0 ? rankCrops(series, CROPS, { ...scenario, season: otherSeason })[0] : null
-    return { snap, ranked, otherSeason, otherBest }
+    const otherBest = ranked[0].netProfit < 0 ? (rankCrops(series, CROPS, { ...scenario, season: otherSeason }).find((r) => !r.notSuited) ?? null) : null
+    return { snap, ranked, unsuited, otherSeason, otherBest }
   }, [series, season, areaHa, rainAnomalyPct, tempAnomalyC, pawcMm, irrigationMm, previousCrop, economics])
 
   const placeName = hub ? hub.name : (customName ?? `Paddock ${coords.lat.toFixed(2)}°, ${coords.lon.toFixed(2)}°`)
@@ -240,6 +243,7 @@ export default function App() {
             />
             <Leaderboard
               results={analysis.ranked}
+              unsuited={analysis.unsuited}
               activeId={active.crop.id}
               onSelect={setActiveId}
               scientist={scientist}

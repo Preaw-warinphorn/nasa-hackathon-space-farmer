@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { CalendarCheck, ChartLine, ChartPie, Check, Crown, Flame, Hourglass, Leaf, ShieldHalf, Snowflake, Sprout, Thermometer, TriangleAlert, Weight, Wheat } from 'lucide-react'
+import type { Crop } from '../data/crops'
 import { formatNitrogen } from '../data/crops'
 import { BACKTEST } from '../data/validation'
 import type { CropResult } from '../engine/model'
@@ -117,6 +118,7 @@ function StressBadge({ rainAnomalyPct, tempAnomalyC }: { rainAnomalyPct: number;
 
 export function Leaderboard({
   results,
+  unsuited,
   activeId,
   onSelect,
   scientist,
@@ -127,6 +129,8 @@ export function Leaderboard({
   tempAnomalyC,
 }: {
   results: CropResult[]
+  /** Crops not grown commercially in this region: listed by name only, with no forecast. */
+  unsuited: Crop[]
   activeId: string
   onSelect: (id: string) => void
   scientist: boolean
@@ -162,7 +166,7 @@ export function Leaderboard({
             <div key={r.crop.id}>
             {firstOffSeason && (
               <p className="mb-3 mt-1 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                <span className="h-px flex-1 bg-space-600" /> Not recommended: off-season or not grown in this region <span className="h-px flex-1 bg-space-600" />
+                <span className="h-px flex-1 bg-space-600" /> Not recommended: off-season <span className="h-px flex-1 bg-space-600" />
               </p>
             )}
             <button
@@ -178,11 +182,6 @@ export function Leaderboard({
                     <h4 className="text-sm font-bold text-white">{r.crop.name}</h4>
                     {idx === 0 && <span className="rounded bg-amber-400 px-1.5 py-0.5 text-[10px] font-bold text-space-900">#1 PICK</span>}
                     <span className={`rounded border px-2 py-0.5 font-mono text-[10px] font-bold ${badge}`}>{r.score} pts</span>
-                    {r.notSuited && (
-                      <span className="rounded border border-slate-600 px-1.5 py-0.5 text-[10px] text-slate-400" title="Dryland sorghum and mungbeans are grown in the summer-rainfall zone north of ~33°S">
-                        not grown here
-                      </span>
-                    )}
                     {r.offSeason && <span className="rounded border border-slate-600 px-1.5 py-0.5 text-[10px] text-slate-400">off-season</span>}
                   </div>
                   <div className="mt-0.5 flex flex-wrap items-center gap-3 font-mono text-[11px] text-slate-400">
@@ -242,6 +241,24 @@ export function Leaderboard({
           )
         })}
       </div>
+      {unsuited.length > 0 && (
+        <div className="space-y-2">
+          <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+            <span className="h-px flex-1 bg-space-600" /> Not grown in this region <span className="h-px flex-1 bg-space-600" />
+          </p>
+          {unsuited.map((c) => (
+            <div
+              key={c.id}
+              className="flex items-center gap-3 rounded-xl border border-dashed border-space-700 px-3.5 py-2 opacity-70"
+              title="Dryland sorghum and mungbeans are grown in the summer-rainfall zone of eastern Australia, north of ~33°S"
+            >
+              <span className="text-xl grayscale">{c.icon}</span>
+              <span className="text-sm font-semibold text-slate-300">{c.name}</span>
+              <span className="text-[11px] text-slate-500">not grown commercially here, so no forecast</span>
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   )
 }
