@@ -1,21 +1,35 @@
 # Plan: live crop prices
 
-**Status:** not started · researched 14 Nov 2026
+**Status:** partly done · researched 14 Nov 2026 · updated 15 Nov 2026
+
+Prices are now sourced and dated, and users can edit prices and costs. They are still entered by hand:
+the automatic weekly update (steps 1–3) and the remaining items in "Still to do" are not built.
 
 ## Problem
 
-Crop prices, costs and potential yields in `src/data/crops.ts` are fixed numbers copied from the original mockup.
-The mockup labels them "GRDC / ABARES benchmarks" but cites no report or year, and they have not been verified.
-Judges or farmers asking "where do your prices come from?" currently get no good answer.
+Crop prices, costs and potential yields in `src/data/crops.ts` were fixed numbers copied from the original mockup.
+The mockup labelled them "GRDC / ABARES benchmarks" but cited no report or year, and they had not been verified.
 
-| Crop | Price now ($/t) | ABARES 11 Nov 2026 (A$/t, FOB port) |
-|---|---|---|
-| Wheat | 360 | 406 (ASW) / 417 (APW), FOB Port Adelaide |
-| Feed barley | 310 | 360, FOB Port Adelaide |
-| Canola | 720 | 770, FOB Kwinana |
-| Grain sorghum | 340 | 443, FOB Brisbane |
-| Desi chickpeas | 950 | no live source |
-| Mungbeans | 1,050 | no live source |
+## Done so far
+
+Prices in `src/data/crops.ts` now come from cited sources, with the source and date stored in each crop's `priceSource`.
+For the ABARES export prices, the farm-gate price is the FOB port price less a flat $60/t freight and handling
+allowance (`FREIGHT_HANDLING_AUD_PER_T`), which answers decision 2 below.
+
+| Crop | Mockup price ($/t) | Price used now ($/t, farm-gate) | Source |
+|---|---|---|---|
+| Wheat | 360 | 346 | ABARES ASW $406 FOB Port Adelaide, 11 Nov 2026, less $60 |
+| Feed barley | 310 | 300 | ABARES $360 FOB Port Adelaide, 11 Nov 2026, less $60 |
+| Canola | 720 | 710 | ABARES $770 FOB Kwinana, 11 Nov 2026, less $60 |
+| Grain sorghum | 340 | 383 | ABARES $443 FOB Brisbane, 11 Nov 2026, less $60 |
+| Desi chickpeas | 950 | 669 | ABARES Crop Report Sept 2026, Table 17: delivered Melbourne, Apr–Jun 2026 avg $729, less $60 |
+| Mungbeans | 1,050 | 1,500 | Australian Mungbean Association, 2026 crop: $1,500–1,700/t to the farmer (low end used) |
+
+Also done:
+- **Prices & costs panel** (`src/components/EconomicsPanel.tsx`): lists each crop's price, growing cost and source, lets
+  users override price and cost per crop, and has "Reset to defaults". Overrides flow into the ranking and every dollar
+  figure (step 5, except that edits are not yet saved between visits).
+- **Step 6** (chickpeas and mungbeans): defaults updated with a cited, dated figure.
 
 ## Sources evaluated
 
@@ -31,14 +45,16 @@ section "Selected Australian grain export prices". Rows have the form
 `<name> | <date e.g. 11-Nov> | A$/t | latest | previous week | weekly change | 12 months ago | annual change`.
 ABARES credits domestic grain prices to Jumbuk AG ([data attribution](https://www.agriculture.gov.au/abares/products/weekly_update/data-attribution)).
 
-## Decisions needed before starting
+## Decisions still needed
 
 1. **Permission:** OK for the app to read the ABARES page automatically each week? Note the third-party (Jumbuk AG)
    attribution: credit it on screen, and confirm the terms if the app goes beyond the hackathon.
-2. **Port vs farm-gate:** show FOB port prices as-is (labelled), or subtract a freight/handling allowance?
-   If subtracting, choose the figure and its source.
+2. ~~**Port vs farm-gate:**~~ Decided: subtract a flat $60/t freight and handling allowance. A regional figure would
+   be better, and the $60 still needs a cited source.
 
 ## Steps
+
+Steps 1–4 (automatic weekly update) are not started. Steps 5 and 6 are mostly done (see above).
 
 1. **Price fetcher script:** `scripts/update-prices.mjs`
    - Fetch the ABARES page and parse the "Selected Australian grain export prices" rows.
@@ -59,6 +75,15 @@ ABARES credits domestic grain prices to Jumbuk AG ([data attribution](https://ww
    the IMF chickpea series as a trend indicator only, once its units are confirmed.
 7. **Separately:** costs ($/acre) and potential yields are also unverified. Source them from GRDC regional
    farm gross margin guides and cite them in `crops.ts`.
+
+## Still to do
+
+- Steps 1–3: fetch ABARES prices automatically each week instead of editing `crops.ts` by hand.
+- Step 4: show each price's source on the deep-dive card (today it is only in the Prices & costs panel), and credit
+  Jumbuk AG for the ABARES domestic grain prices.
+- Step 5: save user-entered prices and costs in `localStorage`.
+- Step 7: growing costs are still indicative and uncited; source them from GRDC gross margin guides.
+- Cite a source for the $60/t freight and handling allowance.
 
 ## Done when
 
