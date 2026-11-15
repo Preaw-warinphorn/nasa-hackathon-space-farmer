@@ -26,7 +26,11 @@ export const FROST_THRESHOLD_C = 1 // 2 m air temperature at which ground frost 
 export const KILLING_FROST_C = 2
 /** Days after sowing averaged for the establishment temperature check. */
 export const ESTABLISH_DAYS = 21
+/** Share of flowering/grain-fill days above the crop's heat threshold at which grain set fails outright (a heat blast).
+ *  Never reached by winter crops sown in their window; routinely reached when they are sown into summer. */
+export const HEAT_BLAST_SHARE = 0.5
 export const FLOWERING_START = 0.4
+export type CropFailure = 'cold-sowing' | 'frost-kill' | 'heat-blast' | null
 export const FLOWERING_END = 0.85
 /** Average share of sunlight the canopy intercepts over the whole season (low early, high mid-season). */
 export const MEAN_INTERCEPTION = 0.5
@@ -97,8 +101,8 @@ export interface YearRun {
   startWaterMm: number
   heatDays: number
   frostDays: number
-  /** Crop failed outright: too cold to establish, or killed by frost (frost-tender crops only). */
-  failure: 'cold-sowing' | 'frost-kill' | null
+  /** Crop failed outright: too cold to establish or killed by frost (frost-tender crops), or flowered through a heatwave. */
+  failure: CropFailure
   solarMj: number
   /** Water supply / (water supply needed to reach the radiation-limited yield). */
   waterRatio: number
@@ -134,6 +138,8 @@ export interface CropResult {
   avgFrostDays: number
   /** Share of past seasons a frost-tender crop failed to establish (too cold) or was killed by frost. */
   coldFailShare: number
+  /** Share of past seasons the crop flowered through a heatwave and set no grain. */
+  heatFailShare: number
   avgWaterRatio: number
   avgRainMm: number
   avgStartWaterMm: number
@@ -292,7 +298,7 @@ export function simulateYear(series: DailySeries, start: number, crop: Crop, sc:
   let days: number | null = null
   let floweringStartDay = 0
   let floweringEndDay = 0
-  let failure: 'cold-sowing' | 'frost-kill' | null = null
+  let failure: CropFailure = null
   const rainMult = 1 + sc.rainAnomalyPct / 100
   if (crop.minSowMeanTempC !== undefined) {
     let t = 0
@@ -323,6 +329,8 @@ export function simulateYear(series: DailySeries, start: number, crop: Crop, sc:
       break
     }
   }
+  const floweringDays = floweringEndDay - floweringStartDay
+  if (days !== null && !failure && floweringDays > 0 && heatDays >= HEAT_BLAST_SHARE * floweringDays) failure = 'heat-blast'
   const supply = startWaterMm + rain + (sc.irrigationMm ?? 0)
   const waterLimitedTHa = (crop.wueKgHaMm * Math.max(0, supply - crop.evapLossMm)) / 1000
   // g/m² → t/ha is ×0.01.
@@ -345,7 +353,7 @@ export function simulateYear(series: DailySeries, start: number, crop: Crop, sc:
     yieldTHa,
     floweringStartDay,
     floweringEndDay,
-    /** Why the crop failed outright (too cold to establish, or killed by frost), if it did. */
+    /** Why the crop failed outright (too cold to establish, killed by frost, or a heat blast at flowering), if it did. */
     failure,
   }
 }
@@ -458,7 +466,8 @@ export function evaluateCrop(series: DailySeries, crop: Crop, sc: Scenario, opts
     worstProfit,
     avgHeatDays: mean(years.map((y) => y.heatDays)),
     avgFrostDays: mean(years.map((y) => y.frostDays)),
-    coldFailShare: years.length ? years.filter((y) => y.failure).length / years.length : 0,
+    coldFailShare: years.length ? years.filter((y) => y.failure === 'cold-sowing' || y.failure === 'frost-kill').length / years.length : 0,
+    heatFailShare: years.length ? years.filter((y) => y.failure === 'heat-blast').length / years.length : 0,
     avgWaterRatio: mean(years.map((y) => y.waterRatio)),
     avgRainMm: mean(years.map((y) => y.rainMm)),
     avgStartWaterMm: mean(years.map((y) => y.startWaterMm)),

@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { CROPS, FREIGHT_HANDLING_AUD_PER_T, PRICE_DATE, SUMMER_ZONE_SOUTH_LIMIT_LAT } from '../data/crops'
 import { IRRIGATION_AUD_PER_MM_HA } from '../data/rotation'
 import { ABARES_SOURCE, ABARES_URL, BACKTEST } from '../data/validation'
-import { ABARES_FACTOR_MAX, ABARES_FACTOR_MIN, ESTABLISH_DAYS, FALLOW_DAYS, FALLOW_EFFICIENCY, FLOWERING_END, FLOWERING_START, FROST_THRESHOLD_C, KILLING_FROST_C, MAX_SEASON_DAYS, MEAN_INTERCEPTION, SOIL_DRY_PCTL, SCORE_LOSS_PENALTY, SOIL_WET_PCTL, STARTING_WATER_NOW_DAYS, soilMoistureAnomaly } from '../engine/model'
+import { ABARES_FACTOR_MAX, ABARES_FACTOR_MIN, ESTABLISH_DAYS, FALLOW_DAYS, FALLOW_EFFICIENCY, FLOWERING_END, FLOWERING_START, FROST_THRESHOLD_C, HEAT_BLAST_SHARE, KILLING_FROST_C, MAX_SEASON_DAYS, MEAN_INTERCEPTION, SOIL_DRY_PCTL, SCORE_LOSS_PENALTY, SOIL_WET_PCTL, STARTING_WATER_NOW_DAYS, soilMoistureAnomaly } from '../engine/model'
 import type { DailySeries } from '../nasa/power'
 import { CACHE_TTL_MS, GWET_SPLICE_DROP, HISTORY_YEARS, buildPowerUrl } from '../nasa/power'
 
@@ -272,7 +272,9 @@ export function NasaDataPage({ series, placeName, lat, lon }: Props) {
               mungbeans are frost-tender tropical crops: if the {ESTABLISH_DAYS} days after sowing average below 16 °C (the “soil at 16 °C and rising” rule) they fail to
               establish, and a night with <code className="font-mono">T2M_MIN</code> at or below {KILLING_FROST_C} °C at any stage kills them. NASA’s gridded minimum
               runs a few degrees warmer than a paddock thermometer on frosty nights, so {KILLING_FROST_C} °C stands in for a ground frost. That is why they fail if sown
-              in autumn.
+              in autumn. The reverse catches winter crops sown into summer: if at least {HEAT_BLAST_SHARE * 100}% of flowering days are above the heat threshold
+              (a heat blast), grain set fails and the season yields nothing. That never happens to wheat, barley or chickpea sown in their autumn window, but it
+              does in most years when they are sown in November.
             </>,
             <>
               <strong className="text-white">Rain + soil water → water-limited yield.</strong> The French–Schultz relation used across Australian dryland cropping:{' '}

@@ -201,6 +201,12 @@ export function Leaderboard({
                         {r.coldFailShare === 1 ? 'too cold: fails every season' : `cold/frost kills ${Math.round(r.coldFailShare * 100)}% of seasons`}
                       </span>
                     )}
+                    {r.heatFailShare > 0 && (
+                      <span className="flex items-center gap-1 text-orange-300" title="Flowers through a heatwave: when most flowering days are above the crop's heat limit, grain set fails">
+                        <Flame className="size-3" />
+                        {r.heatFailShare === 1 ? 'too hot: fails every season' : `heat blast kills ${Math.round(r.heatFailShare * 100)}% of seasons`}
+                      </span>
+                    )}
                     <span className={r.crop.nitrogenKgHa > 0 ? 'font-semibold text-emerald-300' : ''}>{formatNitrogen(r.crop.nitrogenKgHa)}</span>
                     {r.rotation.tone !== 'neutral' && (
                       <span className={r.rotation.tone === 'good' ? 'text-emerald-300' : 'text-rose-300'}>
