@@ -45,16 +45,6 @@ function FlyTo({ target }: { target: FlyTarget | null }) {
   return null
 }
 
-/** Leaflet caches the container size; tell it when the map is resized. */
-function SizeWatcher({ expanded }: { expanded: boolean }) {
-  const map = useMap()
-  useEffect(() => {
-    const t = setTimeout(() => map.invalidateSize(), 320)
-    return () => clearTimeout(t)
-  }, [expanded, map])
-  return null
-}
-
 function zoomLabel(z: number): { text: string; cls: string } {
   if (z >= 13) return { text: `Paddock level (zoom ${z})`, cls: 'text-emerald-400 font-bold' }
   if (z >= 9) return { text: `District view (zoom ${z})`, cls: 'text-cyan-400' }
@@ -65,7 +55,6 @@ export function MapPicker(props: {
   lat: number
   lon: number
   fly: FlyTarget | null
-  expanded: boolean
   drawing: boolean
   points: LatLon[]
   boundary: LatLon[] | null
@@ -80,7 +69,7 @@ export function MapPicker(props: {
       <MapContainer
         center={[props.lat, props.lon]}
         zoom={5}
-        className={`w-full rounded-xl transition-[height] duration-300 ${props.expanded ? 'h-[650px]' : 'h-[460px]'}`}
+        className="h-[460px] w-full rounded-xl"
         zoomControl
       >
         <LayersControl position="topright">
@@ -112,7 +101,6 @@ export function MapPicker(props: {
         <Marker position={[props.lat, props.lon]} icon={pinIcon} />
         <MapEvents drawing={props.drawing} onPick={props.onPick} onAddPoint={props.onAddPoint} onFinish={props.onFinish} onZoom={setZoom} />
         <FlyTo target={props.fly} />
-        <SizeWatcher expanded={props.expanded} />
       </MapContainer>
       <div className="pointer-events-none absolute bottom-3 left-3 z-[1000] flex flex-wrap items-center gap-2 rounded-lg border border-space-700 bg-space-900/90 px-3 py-1.5 text-[11px] text-slate-300 shadow-lg">
         <span>{props.drawing ? 'Click each corner of your paddock, then Finish (or double-click)' : 'Click to drop the farm pin, or use Draw paddock to outline it'}</span>

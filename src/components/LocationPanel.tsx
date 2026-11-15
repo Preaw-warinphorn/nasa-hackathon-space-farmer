@@ -1,4 +1,4 @@
-import { Check, Crosshair, Expand, History, LoaderCircle, MapPin, PenLine, Search, Shrink, SlidersHorizontal, Trash2, TriangleAlert } from 'lucide-react'
+import { Check, Crosshair, History, LoaderCircle, MapPin, PenLine, Search, SlidersHorizontal, Trash2, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import type { Season } from '../data/crops'
@@ -51,7 +51,6 @@ const PREV_NOTES: Partial<Record<PreviousCrop, { text: string; cls: string }>> =
 
 export function LocationPanel(p: Props) {
   const [fly, setFly] = useState<FlyTarget | null>(null)
-  const [expanded, setExpanded] = useState(false)
   const [drawing, setDrawing] = useState(false)
   const [points, setPoints] = useState<LatLon[]>([])
   const [boundary, setBoundary] = useState<LatLon[] | null>(null)
@@ -206,12 +205,6 @@ export function LocationPanel(p: Props) {
                 <Trash2 className="size-3.5" /> Clear
               </button>
             )}
-            <button
-              onClick={() => setExpanded((x) => !x)}
-              className="flex items-center gap-1 rounded-md border border-space-600 bg-space-800 px-2.5 py-1.5 text-slate-300 transition hover:bg-space-700 hover:text-white"
-            >
-              {expanded ? <Shrink className="size-3.5" /> : <Expand className="size-3.5" />} {expanded ? 'Normal size' : 'Expand map'}
-            </button>
           </div>
           {boundaryHa !== null && !drawing && (
             <span className="rounded border border-emerald-800 bg-emerald-950 px-2.5 py-1 font-mono text-[11px] font-bold text-emerald-300">
@@ -272,7 +265,6 @@ export function LocationPanel(p: Props) {
           lat={p.lat}
           lon={p.lon}
           fly={fly}
-          expanded={expanded}
           drawing={drawing}
           points={points}
           boundary={boundary}
